@@ -318,6 +318,9 @@ app.get("/*", serveStatic({ path: "./dist/index.html" }));
 
 // ---------- Boot ----------
 
+const missing = ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "ANTHROPIC_API_KEY"].filter((k) => !process.env[k]);
+if (missing.length) console.warn(`[kept] Missing env: ${missing.join(", ")}. The app still starts; checkout/refunds need PayPal, and compiling new promises needs Anthropic.`);
+
 if (products.all().length === 0) {
   seedProducts();
   seedPromises();
