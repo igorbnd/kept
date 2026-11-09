@@ -3,3 +3,8 @@ dist
 data
 .env
 *.log
+
+# demo video renders
+video/out/
+video/raw/
+video/node_modules/
