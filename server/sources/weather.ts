@@ -98,5 +98,10 @@ export function clearWeatherOverrides(): void {
 export function setWeatherOverride(date: string, locationName: string, obs: Partial<WeatherObservation> | null): void {
   const key = overrideKey(date, locationName);
   if (obs === null) overrides.delete(key);
-  else overrides.set(key, { ...overrides.get(key), ...obs });
+  else {
+    const merged = { ...overrides.get(key), ...obs };
+    overrides.delete(key); // re-insert so the newest override is last in Map order
+    overrides.set(key, merged);
+    while (overrides.size > 500) overrides.delete(overrides.keys().next().value!); // public demo: keep it bounded
+  }
 }

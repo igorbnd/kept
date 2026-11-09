@@ -1,11 +1,14 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { z } from "zod";
+import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
+import { z, ZodError } from "zod";
 import { compilePromise } from "./ai/compiler.ts";
-import { advanceClock, agentEvents, clockOffsetMs, logEvent, newId, now, orders, products, promises, resetAll, resetClock } from "./db.ts";
+import { advanceClock, agentEvents, clockOffsetMs, logEvent, newId, now, orders, products, promises, pruneData, resetAll, resetClock } from "./db.ts";
 import { MERCHANT } from "./merchant.ts";
 import { addTracking, captureOrder, createOrder, SANDBOX_TEST_CARD } from "./paypal.ts";
+import { rateLimit, redact } from "./safety.ts";
 import { seedProducts, seedPromises } from "./seed.ts";
 import { CARRIER_NAME, createShipment, getCarrierEvents, pushCarrierEvent } from "./sources/carrier.ts";
 import { clearWeatherOverrides, setWeatherOverride } from "./sources/weather.ts";
@@ -15,9 +18,28 @@ import { computeDeadline, startWatcher, tick } from "./watcher.ts";
 const app = new Hono();
 
 app.onError((err, c) => {
-  console.error(err);
-  return c.json({ error: err.message }, 500);
+  if (err instanceof HTTPException) return err.getResponse();
+  if (err instanceof ZodError) {
+    const i = err.issues[0];
+    return c.json({ error: `Invalid request: ${i ? `${i.path.join(".") || "body"} ${i.message.toLowerCase()}` : "bad input"}` }, 400);
+  }
+  if (err instanceof SyntaxError) return c.json({ error: "Invalid request: body must be JSON" }, 400);
+  console.error(redact(String(err?.stack ?? err)));
+  return c.json({ error: redact(err.message || "Something went wrong") }, 500);
 });
+
+// ---------- Public-deploy guard rails ----------
+
+const TEN_MIN = 10 * 60_000;
+app.use("/api/*", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Request body too large (16 KB max)." }, 413) }));
+const writeLimit = rateLimit("api", 300, TEN_MIN, "changes");
+app.use("/api/*", (c, next) => (c.req.method === "GET" ? next() : writeLimit(c, next)));
+app.post("/api/promises/compile", rateLimit("compile", 10, TEN_MIN, "promise compiles", 60));
+app.post("/api/orders", rateLimit("orders", 30, TEN_MIN, "orders", 150));
+app.post("/api/orders/:id/capture", rateLimit("capture", 40, TEN_MIN, "payment captures", 200));
+app.post("/api/demo/reset", rateLimit("reset", 3, TEN_MIN, "demo resets"));
+app.post("/api/demo/sample", rateLimit("sample", 3, TEN_MIN, "sample-history loads", 12));
+app.post("/api/demo/*", rateLimit("demo", 120, TEN_MIN, "demo actions"));
 
 // ---------- Config / shop ----------
 
@@ -39,11 +61,12 @@ app.get("/api/products", (c) =>
 app.get("/api/promises", (c) => c.json(promises.all().reverse()));
 
 app.post("/api/promises/compile", async (c) => {
-  const body = z.object({ product_id: z.string(), text: z.string().min(3).max(500) }).parse(await c.req.json());
+  const body = z.object({ product_id: z.string().max(64), text: z.string().trim().min(3).max(500) }).parse(await c.req.json());
   const product = products.get(body.product_id);
   if (!product) return c.json({ error: "product not found" }, 404);
   const compiled = await compilePromise(body.text, product, MERCHANT.timezone);
   const rec = promises.put({ id: newId("prm"), product_id: product.id, source_text: body.text, compiled, status: "draft", created_at: now().toISOString() });
+  pruneData();
   logEvent("compiled", `Compiled “${body.text}” → ${compiled.checkable ? compiled.badge : "not checkable"}`, null, { promise_id: rec.id, compiled });
   return c.json(rec);
 });
@@ -62,20 +85,22 @@ app.post("/api/promises/:id/activate", (c) => {
 // ---------- Checkout ----------
 
 const CreateOrderBody = z.object({
-  product_id: z.string(),
+  product_id: z.string().max(64),
   event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
-  event_location: z.object({ name: z.string(), lat: z.number(), lon: z.number() }).nullable().optional(),
+  event_location: z.object({ name: z.string().min(1).max(80), lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullable().optional(),
   // Sandbox-only shortcut: pay with PayPal's test Visa so judges and scripts can skip the wallet popup.
   test_card: z.boolean().optional(),
 });
 
-app.post("/api/orders", async (c) => {
-  const body = CreateOrderBody.parse(await c.req.json());
+type CreateOrderInput = z.infer<typeof CreateOrderBody>;
+
+/** Create a Kept order plus its PayPal order. Returns an error string for buyer-fixable problems. */
+async function placeOrder(body: CreateOrderInput): Promise<{ error: string; status: 400 | 404 } | { order_id: string; paypal_order_id: string }> {
   const product = products.get(body.product_id);
-  if (!product) return c.json({ error: "product not found" }, 404);
+  if (!product) return { error: "product not found", status: 404 };
   const promise = product.promise_id ? promises.get(product.promise_id) : null;
   const compiled = promise?.status === "active" ? promise.compiled : null;
-  if (compiled?.needs_from_buyer.includes("event_date") && !body.event_date) return c.json({ error: "Pick a tour date." }, 400);
+  if (compiled?.needs_from_buyer.includes("event_date") && !body.event_date) return { error: "Pick a tour date.", status: 400 };
 
   const id = newId("ord");
   const pp = await createOrder(product, { orderRef: id, description: compiled ? `${product.name} — ${compiled.badge}` : product.name, card: body.test_card ? SANDBOX_TEST_CARD : undefined });
@@ -102,17 +127,30 @@ app.post("/api/orders", async (c) => {
     resolved_at: null,
   };
   orders.put(order);
-  return c.json({ order_id: id, paypal_order_id: pp.id });
-});
+  pruneData();
+  return { order_id: id, paypal_order_id: pp.id };
+}
 
-app.post("/api/orders/:id/capture", async (c) => {
-  const order = orders.get(c.req.param("id"));
-  if (!order) return c.json({ error: "not found" }, 404);
-  if (order.status !== "created") return c.json(order);
+// One capture per order at a time: the PayPal button and a double click can race, and a second
+// capture call would fail with ORDER_ALREADY_CAPTURED even though the first one succeeded.
+const capturing = new Map<string, Promise<Order>>();
+
+function captureById(orderId: string): Promise<Order> {
+  const inflight = capturing.get(orderId);
+  if (inflight) return inflight;
+  const p = doCapture(orderId).finally(() => capturing.delete(orderId));
+  capturing.set(orderId, p);
+  return p;
+}
+
+async function doCapture(orderId: string): Promise<Order> {
+  const order = orders.get(orderId);
+  if (!order) throw new HTTPException(404, { res: Response.json({ error: "not found" }, { status: 404 }) });
+  if (order.status !== "created") return order;
   const cap = await captureOrder(order.paypal_order_id);
-  if (cap.status !== "COMPLETED") return c.json({ error: `PayPal capture status ${cap.status}` }, 400);
+  if (cap.status !== "COMPLETED") throw new HTTPException(400, { res: Response.json({ error: `PayPal capture status ${cap.status}` }, { status: 400 }) });
 
-  const product = products.get(order.product_id)!;
+  const product = products.get(order.product_id);
   const purchasedAt = now();
   const patch: Partial<Order> = {
     status: "paid",
@@ -125,7 +163,7 @@ app.post("/api/orders/:id/capture", async (c) => {
   if (cond && (cond.kind === "delivered_by" || cond.kind === "shipped_by")) {
     patch.deadline_at = computeDeadline(cond.deadline, purchasedAt, MERCHANT.timezone).toISOString();
   }
-  if (product.kind === "physical") {
+  if (product?.kind === "physical") {
     patch.tracking_number = createShipment(order.id);
     try {
       await addTracking(order.paypal_order_id, cap.capture_id, patch.tracking_number, CARRIER_NAME);
@@ -134,10 +172,19 @@ app.post("/api/orders/:id/capture", async (c) => {
       logEvent("error", `Couldn't attach tracking in PayPal: ${(e as Error).message}`, order.id);
     }
   }
+  if (!orders.get(order.id)) throw new HTTPException(409, { res: Response.json({ error: "This order was cleared by a demo reset while paying." }, { status: 409 }) });
   const updated = orders.update(order.id, patch);
   logEvent("watching", order.promise_snapshot ? `Paid $${cap.amount.toFixed(2)} — now watching “${order.promise_snapshot.badge}”` : `Paid $${cap.amount.toFixed(2)} (no promise)`, order.id);
-  return c.json(updated);
+  return updated;
+}
+
+app.post("/api/orders", async (c) => {
+  const res = await placeOrder(CreateOrderBody.parse(await c.req.json()));
+  if ("error" in res) return c.json({ error: res.error }, res.status);
+  return c.json(res);
 });
+
+app.post("/api/orders/:id/capture", async (c) => c.json(await captureById(c.req.param("id"))));
 
 // ---------- Ledger ----------
 
@@ -180,7 +227,7 @@ app.get("/api/stats", (c) => {
 // ---------- Demo controls (the "world" the agent watches) ----------
 
 app.post("/api/demo/clock", async (c) => {
-  const { hours, reset } = z.object({ hours: z.number().optional(), reset: z.boolean().optional() }).parse(await c.req.json());
+  const { hours, reset } = z.object({ hours: z.number().min(-24 * 30).max(24 * 60).optional(), reset: z.boolean().optional() }).parse(await c.req.json());
   if (reset) resetClock();
   else if (hours) advanceClock(hours * 3600_000);
   logEvent("info", reset ? "Clock reset to real time" : `Clock moved forward ${hours}h → ${now().toUTCString()}`);
@@ -190,16 +237,18 @@ app.post("/api/demo/clock", async (c) => {
 
 app.post("/api/demo/carrier/:tracking", async (c) => {
   const body = z
-    .object({ status: z.enum(["picked_up", "in_transit", "delayed", "out_for_delivery", "delivered"]), description: z.string(), location: z.string() })
+    .object({ status: z.enum(["picked_up", "in_transit", "delayed", "out_for_delivery", "delivered"]), description: z.string().min(1).max(120), location: z.string().min(1).max(80) })
     .parse(await c.req.json());
-  const ev = pushCarrierEvent(c.req.param("tracking"), body.status, body.description, body.location);
+  const tracking = c.req.param("tracking");
+  if (!orders.all().some((o) => o.tracking_number === tracking)) return c.json({ error: "No order has that tracking number." }, 404);
+  const ev = pushCarrierEvent(tracking, body.status, body.description, body.location);
   await tick();
   return c.json(ev);
 });
 
 app.post("/api/demo/weather", async (c) => {
   const body = z
-    .object({ date: z.string(), location: z.string(), precipitation_mm: z.number().nullable() })
+    .object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), location: z.string().min(1).max(80), precipitation_mm: z.number().min(0).max(500).nullable() })
     .parse(await c.req.json());
   setWeatherOverride(body.date, body.location, body.precipitation_mm === null ? null : { precipitation_mm: body.precipitation_mm });
   await tick();
@@ -220,6 +269,48 @@ app.post("/api/demo/reset", (c) => {
   return c.json({ ok: true });
 });
 
+// Sample history for an empty ledger (Render's free tier wipes the disk on restart). These are
+// real PayPal sandbox orders paid with the test card, run through the same code paths as a judge's
+// purchase. The world events (carrier scans, one rain override) are simulated, and say so.
+app.post("/api/demo/sample", async (c) => {
+  const byName = (n: string) => products.all().find((p) => p.name === n && p.promise_id && promises.get(p.promise_id)?.status === "active");
+  const mug = byName("Tidepool Mug");
+  const tour = byName("Sunset Kayak Tour");
+  if (!mug || !tour) return c.json({ error: "Sample history needs the original catalog with its two live promises. Reset the demo first." }, 409);
+  const month = now().toISOString().slice(0, 7);
+  const used = orders.all().filter((o) => o.status === "refunded" && (o.resolved_at ?? "").startsWith(month)).reduce((s, o) => s + (o.payout_amount ?? 0), 0);
+  if (used + 100 > MERCHANT.monthly_guarantee_budget) return c.json({ error: "The monthly guarantee budget is nearly used up. Reset the demo before loading sample history." }, 409);
+
+  const tz = MERCHANT.timezone;
+  const ymd = (daysAgo: number) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(now().getTime() - daysAgo * 86_400_000));
+  const home = MERCHANT.home;
+  const rainyDay = ymd(1);
+  const buy = async (body: CreateOrderInput) => {
+    const res = await placeOrder({ ...body, test_card: true });
+    if ("error" in res) throw new Error(res.error);
+    const order = await captureById(res.order_id);
+    logEvent("info", "Sample history: real sandbox order paid with PayPal's test card (Demo controls → Load sample history).", order.id);
+    return order;
+  };
+
+  logEvent("info", `Loading sample history: 4 real sandbox orders; carrier scans and the ${rainyDay} rain are simulated.`);
+  setWeatherOverride(rainyDay, home.name, { precipitation_mm: 4 });
+  const [delivered, inTransit, rainedOut, realWeather] = await Promise.all([
+    buy({ product_id: mug.id }),
+    buy({ product_id: mug.id }),
+    buy({ product_id: tour.id, event_date: rainyDay, event_location: home }),
+    buy({ product_id: tour.id, event_date: ymd(3), event_location: home }), // judged on real Open-Meteo data
+  ]);
+  const scan = (o: Order, status: Parameters<typeof pushCarrierEvent>[1], description: string, location: string) => o.tracking_number && pushCarrierEvent(o.tracking_number, status, description, location);
+  scan(delivered, "picked_up", "Picked up by carrier", "Portland, ME");
+  scan(delivered, "delivered", "Delivered, left at front door", "Front porch");
+  scan(inTransit, "picked_up", "Picked up by carrier", "Portland, ME");
+  scan(inTransit, "in_transit", "In transit: departed regional hub", "Worcester, MA");
+  // The agent resolves them in the background (refund notes take a few seconds each); the UI polls.
+  void tick().catch((e) => console.error("[sample] tick failed:", redact(String(e))));
+  return c.json({ ok: true, order_ids: [delivered, inTransit, rainedOut, realWeather].map((o) => o.id) });
+});
+
 // ---------- Static web app ----------
 
 app.use("/*", serveStatic({ root: "./dist" }));
@@ -231,6 +322,8 @@ if (products.all().length === 0) {
   seedProducts();
   seedPromises();
 }
+pruneData();
+setInterval(pruneData, 60_000).unref();
 startWatcher(Number(process.env.WATCH_INTERVAL_MS ?? 15_000));
 
 const port = Number(process.env.PORT ?? 8787);

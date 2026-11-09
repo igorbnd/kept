@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { redact } from "./safety.ts";
 import type { AgentEvent, CarrierEvent, Order, Product, PromiseRecord } from "./types.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "data/kept.db";
@@ -94,7 +95,27 @@ export function now(): Date {
 }
 
 export function logEvent(kind: AgentEvent["kind"], message: string, order_id: string | null = null, data: unknown = null): AgentEvent {
-  return agentEvents.put({ id: newId("evt"), order_id, kind, message, data, at: now().toISOString() });
+  return agentEvents.put({ id: newId("evt"), order_id, kind, message: redact(message), data, at: now().toISOString() });
+}
+
+// ---------- Retention ----------
+// The demo is public, so nothing may grow without bound. Keep only the newest N docs per collection.
+export const RETENTION = { orders: 200, agent_events: 1000, carrier_events: 2000, promises: 100 } as const;
+
+/** Delete all but the newest `keep` docs of a collection (never touching ids in `protect`). */
+function trim(name: Name, keep: number, protect: Set<string> = new Set()) {
+  const rows = db.prepare("SELECT id FROM docs WHERE collection=? ORDER BY seq DESC").all(name) as { id: string }[];
+  const del = db.prepare("DELETE FROM docs WHERE collection=? AND id=?");
+  for (const r of rows.slice(keep)) if (!protect.has(r.id)) del.run(name, r.id);
+}
+
+export function pruneData() {
+  trim("orders", RETENTION.orders);
+  trim("agent_events", RETENTION.agent_events);
+  trim("carrier_events", RETENTION.carrier_events);
+  // Never drop a promise a product points at, or one live orders still reference.
+  const used = new Set<string>([...products.all().map((p) => p.promise_id ?? ""), ...promises.all().filter((p) => p.status === "active").map((p) => p.id)]);
+  trim("promises", RETENTION.promises, used);
 }
 
 export function resetAll() {
