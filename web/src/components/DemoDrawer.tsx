@@ -167,9 +167,18 @@ export function DemoDrawer({ open, onClose }: { open: boolean; onClose: () => vo
 
         <section className="drawer-section">
           <h4>Agent</h4>
+          <p className="muted xsmall">Empty ledger? “Load sample history” buys 4 real sandbox orders with PayPal's test card (about 10 s). Their carrier scans and one rainy day are simulated.</p>
           <div className="btn-row">
             <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run("tick", () => post("/api/demo/tick"), "Agent ran a check")}>
               {busy === "tick" ? <Spinner size={12} /> : "▶"} Run agent now
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={!!busy}
+              title="Creates 4 real PayPal sandbox orders (test card): one delivered, one in transit, one rained out (simulated rain), one judged on real Open-Meteo weather"
+              onClick={() => run("sample", () => post("/api/demo/sample"), "4 real sandbox orders placed. The agent is checking them now.")}
+            >
+              {busy === "sample" ? <Spinner size={12} /> : null} Load sample history
             </button>
             <button
               className="btn btn-sm btn-danger"
