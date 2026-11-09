@@ -52,7 +52,9 @@ Existing guarantee products (Sensible Weather, WeatherPromise, ShipAid) sell **f
 
 The kayak tour checks **real weather** for the date and city you pick. Demo controls can also simulate rain; simulated evidence is clearly labelled as such.
 
-**PayPal sandbox buyer:** `TODO_SANDBOX_BUYER_EMAIL` / `TODO_PASSWORD` (sandbox only, no real money)
+**PayPal sandbox buyer** (sandbox only, no real money):
+- Email: `sb-b1yc053687438@personal.example.com`
+- Password: `<^I-RW7d`
 
 ## Run locally
 Requirements: Node 22.13+ (uses the built-in `node:sqlite`), a PayPal sandbox app, and an Anthropic API key.
