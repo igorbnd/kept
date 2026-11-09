@@ -204,6 +204,18 @@ function evaluateCarrier(order: Order, cond: Extract<Condition, { kind: "deliver
   return { breached: false, final: false, reason: `Waiting for ${verb} scan before ${dl}`, evidence: ev(summary, false) };
 }
 
+// Timezones for the checkout's preset locations. Anything else falls back to the shop timezone
+// (or Pacific time for locations far west, so the window has surely ended before we judge it).
+const LOCATION_TZ: Record<string, string> = {
+  "Portland, ME": "America/New_York",
+  "Seattle, WA": "America/Los_Angeles",
+  "Miami, FL": "America/New_York",
+  "London, UK": "Europe/London",
+};
+function locationTimezone(loc: { name: string; lon: number }): string {
+  return LOCATION_TZ[loc.name] ?? (loc.lon < -100 ? "America/Los_Angeles" : MERCHANT.timezone);
+}
+
 async function evaluateWeather(order: Order, cond: Extract<Condition, { kind: "weather" }>): Promise<Verdict> {
   const loc = order.event_location ?? MERCHANT.home;
   const hours = cond.hours ?? { start: 0, end: 24 };
@@ -217,9 +229,10 @@ async function evaluateWeather(order: Order, cond: Extract<Condition, { kind: "w
       evidence: { source: "open_meteo_weather", observed: { event_date: null }, summary: "Order has no event date; can't check the weather yet.", final: false },
     };
   }
-  // Location tz approximated as the merchant tz (the shop is local).
+  // Open-Meteo reports hours in the location's local time (timezone=auto), so the window must end
+  // in that timezone too; otherwise a Seattle tour would be judged on forecast, not observed, data.
   const [y, m, d] = order.event_date.split("-").map(Number);
-  const windowEnd = zonedTimeToUtc(y, m, d, hours.end, 0, 0, MERCHANT.timezone);
+  const windowEnd = zonedTimeToUtc(y, m, d, hours.end, 0, 0, locationTimezone(loc));
   const where = `${loc.name}, ${order.event_date}`;
   if (now().getTime() < windowEnd.getTime()) {
     return {

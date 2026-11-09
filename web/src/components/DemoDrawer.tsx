@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, post, type OrderRow } from "../api.ts";
 import { announceWorldChanged, fmtDateTime, nextSaturdayMorning, useClock, usePoll, useToast, ymdIn } from "../lib.tsx";
 import { LOCATIONS } from "../pages/Shop.tsx";
@@ -17,9 +17,14 @@ export function DemoDrawer({ open, onClose }: { open: boolean; onClose: () => vo
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const orders = usePoll((signal) => (open ? api<OrderRow[]>("/api/orders", { signal }) : Promise.resolve(null)), open ? 3000 : 0, [open]);
-  const [wDate, setWDate] = useState(() => ymdIn(new Date()));
+  const [wDate, setWDate] = useState(() => ymdIn(serverNow()));
   const [wLoc, setWLoc] = useState(LOCATIONS[0].name);
   const [wMm, setWMm] = useState("6");
+
+  // Default the override date to the simulated "today" each time the drawer opens (not the browser's date).
+  useEffect(() => {
+    if (open) setWDate(ymdIn(serverNow()));
+  }, [open, serverNow]);
 
   const now = serverNow();
   const offsetH = (config?.clock_offset_ms ?? 0) / 3600_000;

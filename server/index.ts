@@ -8,7 +8,7 @@ import { MERCHANT } from "./merchant.ts";
 import { addTracking, captureOrder, createOrder, SANDBOX_TEST_CARD } from "./paypal.ts";
 import { seedProducts, seedPromises } from "./seed.ts";
 import { CARRIER_NAME, createShipment, getCarrierEvents, pushCarrierEvent } from "./sources/carrier.ts";
-import { setWeatherOverride } from "./sources/weather.ts";
+import { clearWeatherOverrides, setWeatherOverride } from "./sources/weather.ts";
 import type { Order } from "./types.ts";
 import { computeDeadline, startWatcher, tick } from "./watcher.ts";
 
@@ -212,7 +212,8 @@ app.post("/api/demo/tick", async (c) => {
 });
 
 app.post("/api/demo/reset", (c) => {
-  resetAll();
+  resetAll(); // also resets the simulated clock (it lives in settings)
+  clearWeatherOverrides();
   seedProducts();
   seedPromises();
   logEvent("info", "Demo reset: fresh catalog with two live promises");

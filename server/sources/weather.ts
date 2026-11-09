@@ -89,6 +89,11 @@ export async function getWeather(lat: number, lon: number, locationName: string,
   return { ...real, ...override, date, location: locationName, hours: win, source_url: real.source_url, simulated: true };
 }
 
+/** Drop every demo override (demo reset). */
+export function clearWeatherOverrides(): void {
+  overrides.clear();
+}
+
 /** Demo override for when the sky refuses to cooperate on video day. Clearly flagged as simulated in evidence. */
 export function setWeatherOverride(date: string, locationName: string, obs: Partial<WeatherObservation> | null): void {
   const key = overrideKey(date, locationName);
