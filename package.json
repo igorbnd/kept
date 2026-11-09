@@ -1,0 +1,29 @@
+{
+  "name": "kept",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Promises that keep themselves: merchants write a guarantee in plain English, an AI agent turns it into a checkable rule, watches the real world, and refunds the buyer through PayPal before they ask.",
+  "license": "MIT",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch --env-file=.env server/index.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "build": "vite build --config web/vite.config.ts",
+    "start": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@hono/node-server": "^1.13.0",
+    "hono": "^4.6.0",
+    "tsx": "^4.19.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.0"
+  }
+}
