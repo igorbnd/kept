@@ -123,6 +123,7 @@ const getClient = () => (client ??= new Anthropic());
 export type CompileOptions = { effort?: "low" | "medium" | "high" };
 
 export async function compilePromise(text: string, product: Product, merchantTimezone: string, opts: CompileOptions = {}): Promise<CompiledPromise> {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("The promise compiler is offline: ANTHROPIC_API_KEY isn't set on the server. The preset promises still work.");
   const req = {
     model: MODEL,
     max_tokens: 16000,
@@ -137,7 +138,11 @@ export async function compilePromise(text: string, product: Product, merchantTim
     res = await getClient().beta.messages.parse({ ...req, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
   } catch (err) {
     if (err instanceof Anthropic.BadRequestError) {
-      res = await getClient().beta.messages.parse(req); // fallbacks unsupported → plain request
+      try {
+        res = await getClient().beta.messages.parse(req); // fallbacks unsupported → plain request
+      } catch (err2) {
+        throw new Error(`Promise compiler couldn't reach Claude: ${(err2 as Error).message}`);
+      }
     } else {
       throw new Error(`Promise compiler couldn't reach Claude: ${(err as Error).message}`);
     }
