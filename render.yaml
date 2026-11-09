@@ -1,0 +1,20 @@
+# One-click deploy: Render Blueprint. Secrets are prompted for at deploy time (sync: false).
+services:
+  - type: web
+    name: kept
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: WATCH_INTERVAL_MS
+        value: "15000"

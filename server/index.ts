@@ -5,7 +5,7 @@ import { z } from "zod";
 import { compilePromise } from "./ai/compiler.ts";
 import { advanceClock, agentEvents, clockOffsetMs, logEvent, newId, now, orders, products, promises, resetAll, resetClock } from "./db.ts";
 import { MERCHANT } from "./merchant.ts";
-import { addTracking, captureOrder, createOrder } from "./paypal.ts";
+import { addTracking, captureOrder, createOrder, SANDBOX_TEST_CARD } from "./paypal.ts";
 import { seedProducts, seedPromises } from "./seed.ts";
 import { CARRIER_NAME, createShipment, getCarrierEvents, pushCarrierEvent } from "./sources/carrier.ts";
 import { setWeatherOverride } from "./sources/weather.ts";
@@ -65,6 +65,8 @@ const CreateOrderBody = z.object({
   product_id: z.string(),
   event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   event_location: z.object({ name: z.string(), lat: z.number(), lon: z.number() }).nullable().optional(),
+  // Sandbox-only shortcut: pay with PayPal's test Visa so judges and scripts can skip the wallet popup.
+  test_card: z.boolean().optional(),
 });
 
 app.post("/api/orders", async (c) => {
@@ -76,7 +78,7 @@ app.post("/api/orders", async (c) => {
   if (compiled?.needs_from_buyer.includes("event_date") && !body.event_date) return c.json({ error: "Pick a tour date." }, 400);
 
   const id = newId("ord");
-  const pp = await createOrder(product, { orderRef: id, description: compiled ? `${product.name} — ${compiled.badge}` : product.name });
+  const pp = await createOrder(product, { orderRef: id, description: compiled ? `${product.name} — ${compiled.badge}` : product.name, card: body.test_card ? SANDBOX_TEST_CARD : undefined });
   const order: Order = {
     id,
     product_id: product.id,

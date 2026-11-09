@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Promises that keep themselves: merchants write a guarantee in plain English, an AI agent turns it into a checkable rule, watches the real world, and refunds the buyer through PayPal before they ask.",
   "license": "MIT",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "concurrently -n api,web -c blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "tsx watch --env-file=.env server/index.ts",
@@ -17,13 +19,21 @@
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
     "@hono/node-server": "^1.13.0",
+    "ag-grid-community": "^36.3.0",
+    "ag-grid-react": "^36.3.0",
     "hono": "^4.6.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.19.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "concurrently": "^9.1.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vite": "^8.3.7"
   }
 }
