@@ -251,13 +251,16 @@ async function evaluateWeather(order: Order, cond: Extract<Condition, { kind: "w
   const value = obs[cond.metric];
   if (!Number.isFinite(value)) throw new Error(`Open-Meteo returned no ${cond.metric} for ${where}`);
   const breached = compare(value, cond.op, cond.threshold);
-  const src = obs.simulated ? "Simulated weather (demo override)" : "Open-Meteo";
+  // The demo clock can run ahead of reality. If the window hasn't actually happened yet, Open-Meteo
+  // only has a forecast for it, so say so (real wall time on purpose: this is about the real sky).
+  const forecastOnly = !obs.simulated && windowEnd.getTime() > Date.now();
+  const src = obs.simulated ? "Simulated weather (demo override)" : forecastOnly ? "Open-Meteo forecast (the demo clock is ahead of real time)" : "Open-Meteo";
   const summary = `${src}: ${metric.label(value)}, ${fmtHours(hours)}, ${where} (${thresholdText})`;
   return {
     breached,
     final: true,
     reason: breached ? `${metric.label(value)} crossed the ${thresholdText}` : `Promise kept: ${metric.label(value)}, ${thresholdText} not met`,
-    evidence: { source: "open_meteo_weather", observed: { ...obs, metric: cond.metric, value, op: cond.op, threshold: cond.threshold }, summary, final: true },
+    evidence: { source: "open_meteo_weather", observed: { ...obs, forecast_only: forecastOnly, metric: cond.metric, value, op: cond.op, threshold: cond.threshold }, summary, final: true },
   };
 }
 
@@ -379,10 +382,12 @@ async function runTick(): Promise<void> {
   const lastEvidence = lastEvidenceByOrder();
   const todo = orders.all().filter((o) => o.status === "paid" || (o.status === "breached" && !o.resolved_at));
   for (const order of todo) {
+    if (!orders.get(order.id)) continue; // cleared by a demo reset mid-tick
     try {
       await processOrder(order, lastEvidence);
       lastErrorByOrder.delete(order.id);
     } catch (e) {
+      if (!orders.get(order.id)) continue; // reset while we were checking it; nothing to report
       const msg = `Couldn't check this order: ${(e as Error).message}`;
       if (lastErrorByOrder.get(order.id) !== msg) logEvent("error", msg, order.id); // don't spam the log every interval
       lastErrorByOrder.set(order.id, msg);

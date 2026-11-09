@@ -69,8 +69,12 @@ Production: `npm run build && npm start` serves everything on `:8787`. To deploy
 
 End-to-end check against the real sandbox, with the API running:
 ```bash
-./scripts/e2e.sh   # buy → parcel delayed → Friday passes → PayPal refund → Claude note
+./scripts/e2e.sh           # buy → parcel delayed → Friday passes → PayPal refund → Claude note
+./scripts/e2e-weather.sh   # kayak tour: 4 mm rain → 50% PayPal refund; 0 mm → promise kept
 ```
+(Both reset the demo data. Point them elsewhere with `API=http://localhost:PORT`.)
+
+Public deploys are rate-limited per IP (e.g. 10 promise compiles, 30 orders, 3 demo resets per 10 minutes) and keep only the newest 200 orders and 1,000 agent events. Requests from localhost with no proxy headers are exempt; set `RATE_LIMIT=off` to disable entirely. On an empty ledger, **Demo controls → Load sample history** buys 4 real sandbox orders with the test card (their carrier scans and one rainy day are simulated, and labelled as such).
 
 ## Architecture
 ```

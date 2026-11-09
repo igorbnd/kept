@@ -232,8 +232,8 @@ function StatusCard({ data }: { data: OrderDetail }) {
     return (
       <section className="card status-card status-failed">
         <div className="status-eyebrow tone-red">Needs a human</div>
-        <h1 className="status-title">Your refund is approved, but PayPal hiccuped</h1>
-        <p className="muted">The shop has been alerted and will finish it by hand. You don't need to do anything.</p>
+        <h1 className="status-title">Your refund is approved, pending a quick review</h1>
+        <p className="muted">Kept paused the automatic payout (the timeline says why) and alerted the shop, who will finish it by hand. You don't need to do anything.</p>
       </section>
     );
   }

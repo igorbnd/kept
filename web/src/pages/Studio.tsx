@@ -21,7 +21,8 @@ export function Studio() {
   const [activating, setActivating] = useState(false);
 
   useEffect(() => {
-    if (!productId && products.data?.length) setProductId(products.data[0].id);
+    // Also re-pick after a demo reset, which replaces every product id.
+    if (products.data?.length && !products.data.some((p) => p.id === productId)) setProductId(products.data[0].id);
   }, [products.data, productId]);
 
   useEffect(() => {

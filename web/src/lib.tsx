@@ -231,23 +231,29 @@ export function usePoll<T>(fn: (signal: AbortSignal) => Promise<T>, ms: number, 
   const reload = useCallback(() => setBump((b) => b + 1), []);
   useEffect(() => {
     let alive = true;
+    let seq = 0; // newest request wins: a slow older poll must not overwrite fresher data
+    let inflight = 0;
     const ctrl = new AbortController();
-    const run = async () => {
+    const run = async (fromTimer = false) => {
+      if (fromTimer && inflight > 0) return; // don't pile up requests behind a slow server
+      const mine = ++seq;
+      inflight++;
       try {
         const d = await fnRef.current(ctrl.signal);
-        if (!alive) return;
+        if (!alive || mine !== seq) return;
         setData(d);
         setError(null);
       } catch (e) {
-        if (!alive || (e as Error).name === "AbortError") return;
+        if (!alive || mine !== seq || (e as Error).name === "AbortError") return;
         setError((e as Error).message);
       } finally {
+        inflight--;
         if (alive) setLoading(false);
       }
     };
     run();
-    const id = ms > 0 ? setInterval(run, ms) : undefined;
-    const onRefresh = () => setTimeout(run, 150);
+    const id = ms > 0 ? setInterval(() => run(true), ms) : undefined;
+    const onRefresh = () => setTimeout(() => run(), 150);
     window.addEventListener("kept:refresh", onRefresh);
     return () => {
       alive = false;
