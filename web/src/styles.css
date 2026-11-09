@@ -2477,3 +2477,19 @@ textarea:focus {
 .carrier-btns .btn {
   width: 100%;
 }
+
+.test-card-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px dashed currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.75;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.test-card-btn:hover:not(:disabled) { opacity: 1; }
+.test-card-btn:disabled { cursor: progress; opacity: 0.4; }

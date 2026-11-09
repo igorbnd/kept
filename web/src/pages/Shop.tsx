@@ -289,6 +289,30 @@ function Checkout({ product, onClose }: { product: ProductWithPromise; onClose: 
           {sdkState === "error" && <ErrorNote>{sdkError}</ErrorNote>}
           <div ref={btnRef} className="paypal-buttons" />
         </div>
+        <button
+          className="test-card-btn"
+          disabled={capturing}
+          onClick={async () => {
+            setCapturing(true);
+            try {
+              const loc = LOCATIONS[locIdx];
+              const res = await post<{ order_id: string }>("/api/orders", {
+                product_id: product.id,
+                event_date: isExperience ? date : null,
+                event_location: isExperience ? loc : null,
+                test_card: true,
+              });
+              await post(`/api/orders/${res.order_id}/capture`);
+              toast("Paid with the sandbox test card. Kept is now watching your promise.", "success");
+              go(`/order/${res.order_id}`);
+            } catch (e) {
+              toast(`Test-card payment failed: ${(e as Error).message}`, "error");
+              setCapturing(false);
+            }
+          }}
+        >
+          Judges: skip login — pay with PayPal sandbox test card
+        </button>
         <p className="fineprint">PayPal Sandbox. Use a sandbox buyer account; no real money moves.</p>
       </aside>
     </div>,
