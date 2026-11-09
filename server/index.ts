@@ -143,7 +143,9 @@ app.post("/api/orders/:id/capture", async (c) => {
 
 app.get("/api/orders", (c) => {
   const prods = new Map(products.all().map((p) => [p.id, p]));
-  return c.json(orders.all().reverse().map((o) => ({ ...o, product_name: prods.get(o.product_id)?.name ?? "?" })));
+  const latest = new Map<string, string>();
+  for (const e of agentEvents.all()) if (e.order_id) latest.set(e.order_id, e.message);
+  return c.json(orders.all().reverse().map((o) => ({ ...o, product_name: prods.get(o.product_id)?.name ?? "?", latest_evidence: latest.get(o.id) ?? null })));
 });
 
 app.get("/api/orders/:id", (c) => {
