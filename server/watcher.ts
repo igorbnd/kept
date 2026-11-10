@@ -366,17 +366,17 @@ async function assessIfCarrier(order: Order, verdict: Verdict): Promise<boolean>
   const review: OrderReview = { attribution: a.attribution, reason: a.reason, confidence: a.confidence, assessed_at: now().toISOString(), decision: null, decided_at: null };
   const data = { ...review, hold: a.hold, latency_ms: a.latency_ms, error: a.error ?? null };
   if (a.error) {
-    logEvent("assessment", `Claude's review was unavailable (${a.error}), so Kept is paying by default.`, order.id, data);
+    logEvent("assessment", `The Kept agent's review was unavailable (${a.error}), so Kept is paying by default.`, order.id, data);
   } else {
     const then = a.hold ? "pausing the refund for the merchant" : "paying automatically";
-    logEvent("assessment", `Claude reviewed the evidence: ${ATTRIBUTION_LABEL[a.attribution]} → ${then}. ${a.reason}`, order.id, data);
+    logEvent("assessment", `Kept agent reviewed the evidence: ${ATTRIBUTION_LABEL[a.attribution]} → ${then}. ${a.reason}`, order.id, data);
   }
   if (!a.hold) {
     orders.update(order.id, { review });
     return false;
   }
   orders.update(order.id, { status: "held", review });
-  logEvent("hold", `Refund paused for ${MERCHANT.name} to review. Claude can pause a payout, never create one.`, order.id, data);
+  logEvent("hold", `Refund paused for ${MERCHANT.name} to review. The Kept agent can pause a payout, never create one.`, order.id, data);
   return true;
 }
 
@@ -411,13 +411,13 @@ export async function decideHeld(orderId: string, decision: "refund" | "decline"
   const review: OrderReview = { ...order.review, decision, decided_at: t };
   if (decision === "decline") {
     const updated = orders.update(orderId, { status: "declined", review, resolved_at: t });
-    logEvent("info", `Merchant declined payout: reviewed Claude's flag (“${order.review.reason}”) and kept the charge.`, orderId, { review });
+    logEvent("info", `Merchant declined payout: reviewed the Kept agent's flag (“${order.review.reason}”) and kept the charge.`, orderId, { review });
     return updated;
   }
   // Flip to "breached" synchronously (no await in between), so a double click sees a non-held order.
   // If the process dies mid-refund, the tick's recovery path resumes it with the stored review.
   orders.update(orderId, { status: "breached", review });
-  logEvent("info", `Merchant approved the refund after reviewing Claude's flag.`, orderId, { review });
+  logEvent("info", `Merchant approved the refund after reviewing the Kept agent's flag.`, orderId, { review });
   payingOutsideTick.add(orderId);
   try {
     return (await payOutOrder(orderId)) ?? orders.get(orderId)!;

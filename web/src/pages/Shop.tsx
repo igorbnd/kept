@@ -88,7 +88,7 @@ export function Shop() {
         <div className="how-step">
           <span className="how-num">1</span>
           <h4>The shop writes a promise</h4>
-          <p>In plain English. Claude compiles it into a rule the shop reviews and approves.</p>
+          <p>In plain English. The Kept agent compiles it into a rule the shop reviews and approves.</p>
         </div>
         <div className="how-step">
           <span className="how-num">2</span>

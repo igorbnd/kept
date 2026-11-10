@@ -342,7 +342,7 @@ function ReviewCallout({ rows }: { rows: Row[] }) {
           {held.length === 1 ? "1 payout needs your review" : `${held.length} payouts need your review`}
         </strong>
         <span>
-          Claude paused {held.length === 1 ? "it" : "them"} because the carrier scans point at the buyer's side ({first.product_name}, {first.buyer_name ?? "buyer"}). Claude can pause a payout, never create one.
+          The Kept agent paused {held.length === 1 ? "it" : "them"} because the carrier scans point at the buyer's side ({first.product_name}, {first.buyer_name ?? "buyer"}). The Kept agent can pause a payout, never create one.
         </span>
       </span>
       <span className="review-callout-go">Review →</span>

@@ -1,7 +1,7 @@
 # Kept: promises that keep themselves
 
 A merchant writes a guarantee in plain English, like *"Arrives by Friday or shipping's on us"* or *"Rain on tour day = 50% back."*
-**Claude** turns it into a rule that can be checked. An autonomous **watcher** checks real-world evidence (carrier tracking, live Open-Meteo weather) against that rule, and **Claude reviews messy carrier evidence**: it can pause a payout for the merchant, but never create one. When a promise breaks, **PayPal refunds the buyer automatically**, before they ask, with a note explaining why.
+The **Kept agent**, an LLM agent powered by Claude, turns it into a rule that can be checked. An autonomous **watcher** checks real-world evidence (carrier tracking, live Open-Meteo weather) against that rule, and the **Kept agent reviews messy carrier evidence**: it can pause a payout for the merchant, but never create one. When a promise breaks, **PayPal refunds the buyer automatically**, before they ask, with a note explaining why.
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), 2026.
 
@@ -15,7 +15,7 @@ Guarantees are the cheapest trust signal a small shop has, and the hardest to ke
 Pieces of this already exist. Weather guarantees that pay out automatically ([Sensible Weather](https://www.sensibleweather.com/), [WeatherPromise](https://purchase.weatherpromise.com/us/en/)) are fixed products sold by an insurer. Merchant-run shipping guarantees ([ShipAid](https://www.shipaid.com/)) still rely on the buyer filing a claim. AI support agents (for example [Yuma](https://yuma.ai/ai-support-agent)) can resolve late orders proactively, but a model decides each case. LLM "intelligent contracts" ([GenLayer](https://docs.genlayer.com/understand-genlayer-protocol/typical-use-cases)) also have a model judge each claim.
 
 Kept makes a different split:
-- **The AI compiles the promise; code keeps it.** Claude turns the merchant's words into a typed rule *once*. The merchant reviews and approves it, and from then on no model decides money. The outcome is deterministic, auditable, capped and testable.
+- **The AI compiles the promise; code keeps it.** The Kept agent turns the merchant's words into a typed rule *once*. The merchant reviews and approves it, and from then on no model decides money. The outcome is deterministic, auditable, capped and testable.
 - **The promise is a contract the buyer can see.** The exact rule is shown at checkout and frozen into the order. It isn't an internal policy hidden behind a support bot.
 - **Promises that can't be checked are refused.** "You'll love it or your money back" gets a rewrite that can be checked, not a fake guarantee.
 - **One engine for any promise, in the merchant's own words.** Delivery and weather today, on the same rule language, with no fixed product catalog.
@@ -25,12 +25,12 @@ Kept makes a different split:
 
 | | |
 |---|---|
-| **1. Write** | In the **Promise Studio**, the merchant types a promise. Claude (`claude-opus-5-5`, structured output validated by Zod) compiles it into a small typed rule language: condition, deadline or weather threshold, and payout. It lists every assumption it made and every question the merchant should settle. Subjective promises ("you'll love it") are refused, and Claude suggests a checkable rewrite. |
+| **1. Write** | In the **Promise Studio**, the merchant types a promise. The Kept agent (Claude `claude-opus-5-5`, structured output validated by Zod) compiles it into a small typed rule language: condition, deadline or weather threshold, and payout. It lists every assumption it made and every question the merchant should settle. Subjective promises ("you'll love it") are refused, and Claude suggests a checkable rewrite. |
 | **2. Approve** | The merchant approves the rule. It goes live as a badge on the product. |
 | **3. Buy** | The buyer pays with **PayPal Checkout** (Orders v2). The promise is frozen into the order, and the shipment's tracking number is attached to the PayPal capture (Orders v2 tracking). |
 | **4. Watch** | A deterministic watcher loop checks the evidence: carrier scans, or real hourly weather from Open-Meteo for the tour window. Every observation is written to an audit trail. |
-| **4½. Review** | When a delivery promise breaks, Claude reads the carrier scans and decides *whose fault* the miss looks like. Ordinary delays, weather and lost parcels are the shop's risk, so the payout goes ahead. If the evidence points at the buyer ("Delivery attempted — no one available to sign", "address incomplete"), Claude **pauses** the payout and the merchant decides. Claude can hold a payout. It can never create one, approve one or change the amount. If Claude is unavailable, the default is to pay. |
-| **5. Keep** | When a promise breaks, code computes the payout and **PayPal Payments v2** issues a partial refund (idempotent, with `note_to_payer`). Claude writes the buyer a short note citing the evidence. |
+| **4½. Review** | When a delivery promise breaks, the Kept agent reads the carrier scans and decides *whose fault* the miss looks like. Ordinary delays, weather and lost parcels are the shop's risk, so the payout goes ahead. If the evidence points at the buyer ("Delivery attempted — no one available to sign", "address incomplete"), the Kept agent **pauses** the payout and the merchant decides. The agent can hold a payout. It can never create one, approve one or change the amount. If the model is unavailable, the default is to pay. |
+| **5. Keep** | When a promise breaks, code computes the payout and **PayPal Payments v2** issues a partial refund (idempotent, with `note_to_payer`). The Kept agent writes the buyer a short note citing the evidence. |
 | **6. Account** | The merchant's **AG Grid ledger** shows every order, its latest evidence, the decision, the payout and the PayPal refund id, with live updates and a budget meter. |
 
 | Promise Studio | Ledger (AG Grid) |
@@ -38,13 +38,13 @@ Kept makes a different split:
 | ![Studio](docs/screenshots/studio-reject.png) | ![Ledger](docs/screenshots/ledger.png) |
 
 ## Trust by design
-- **The AI writes the rule; code enforces it.** Claude never decides an amount.
-- **The AI's power over money is one-way.** The Claude reviewer can pause a payout for human review. It can never trigger, approve or enlarge one. `server/watcher.ts` evaluates the rule and computes the payout.
+- **The AI writes the rule; code enforces it.** The Kept agent never decides an amount.
+- **The AI's power over money is one-way.** The Kept agent can pause a payout for human review. It can never trigger, approve or enlarge one. `server/watcher.ts` evaluates the rule and computes the payout.
 - **Payouts are capped** at the captured amount and at the merchant's monthly guarantee budget. Over budget, the watcher stops and asks a human.
 - **A human approves every rule** before it goes live.
 - **The buyer gets the promise they saw.** It's frozen at purchase.
 - **Refunds are idempotent**, keyed on the order id, so a retry can never pay twice.
-- **The model is never on the critical path for money.** If Claude is unavailable, the refund still goes out with a template note.
+- **The model is never on the critical path for money.** If the model is unavailable, the refund still goes out with a template note.
 
 ## Try it (judges)
 
@@ -57,8 +57,8 @@ Kept makes a different split:
 3. Open **Demo controls** (top right):
    - Under the order, click **Delayed (weather)**.
    - Then click **Jump to Saturday 00:01**.
-4. Within seconds the order page flips to **"$6.40 refunded to your PayPal"**, with Claude's note and the real PayPal sandbox refund id.
-5. Open **Ledger** to see it in AG Grid, plus the activity log (every observation, Claude review and payout).
+4. Within seconds the order page flips to **"$6.40 refunded to your PayPal"**, with the Kept agent's note and the real PayPal sandbox refund id.
+5. Open **Ledger** to see it in AG Grid, plus the activity log (every observation, agent review and payout).
 6. Open **Promise Studio** and write your own promise. Try *"You'll love it or your money back"* to see a rejection.
 
 The kayak tour checks **real weather** for the date and city you pick. Demo controls can also simulate rain; simulated evidence is clearly labelled as such.
@@ -80,7 +80,7 @@ Production: `npm run build && npm start` serves everything on `:8787`. To deploy
 
 End-to-end check against the real sandbox, with the API running:
 ```bash
-./scripts/e2e.sh           # buy → parcel delayed → Friday passes → PayPal refund → Claude note
+./scripts/e2e.sh           # buy → parcel delayed → Friday passes → PayPal refund → agent note
 ./scripts/e2e-weather.sh   # kayak tour: 4 mm rain → 50% PayPal refund; 0 mm → promise kept
 ```
 (Both reset the demo data. Point them elsewhere with `API=http://localhost:PORT`.)
@@ -99,7 +99,7 @@ web/ (React + Vite + AG Grid)  ──►  server/index.ts (Hono)
 ```
 
 ## AI tools used
-- **Claude `claude-opus-5-5`** (Anthropic API) compiles promises into rules and writes buyer refund notes, at runtime.
+- **Claude `claude-opus-5-5`** (Anthropic API) is the model behind the Kept agent at runtime: it compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those three functions.
 - **Claude Code** helped build this project.
 
 ## Built during the submission period

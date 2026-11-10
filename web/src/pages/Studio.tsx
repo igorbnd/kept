@@ -77,7 +77,7 @@ export function Studio() {
         <div>
           <div className="eyebrow">Merchant · Harbor &amp; Clay</div>
           <h1 className="display-sm">Promise Studio</h1>
-          <p className="lede">Write the guarantee the way you'd say it at the counter. Claude turns it into a rule you can read, check and approve. Code enforces it from there.</p>
+          <p className="lede">Write the guarantee the way you'd say it at the counter. The Kept agent turns it into a rule you can read, check and approve. Code enforces it from there.</p>
         </div>
       </header>
 
@@ -142,7 +142,7 @@ export function Studio() {
               <div className="thinking-head">
                 <span className="claude-orb" />
                 <div>
-                  <strong>Claude is reading your promise…</strong>
+                  <strong>The Kept agent is reading your promise…</strong>
                   <div className="muted small thinking-step" key={thinkIdx}>
                     {THINKING[thinkIdx]}
                   </div>
@@ -164,7 +164,7 @@ export function Studio() {
           ) : (
             <div className="card contract placeholder">
               <Empty icon={<ShieldCheck size={30} />} title="Your contract card appears here">
-                You'll see exactly how Kept will enforce the promise: the rule, the evidence it checks, and anything Claude had to assume.
+                You'll see exactly how Kept will enforce the promise: the rule, the evidence it checks, and anything the agent had to assume.
               </Empty>
             </div>
           )}
@@ -283,7 +283,7 @@ function ContractCard({
       </div>
       {c.assumptions.length > 0 && (
         <div className="contract-section">
-          <div className="contract-label">Assumptions Claude made</div>
+          <div className="contract-label">Assumptions the agent made</div>
           <ul className="list-check">
             {c.assumptions.map((a) => (
               <li key={a}>{a}</li>

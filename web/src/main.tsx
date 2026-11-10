@@ -80,7 +80,7 @@ function App() {
       </main>
       <footer className="footer">
         <span>
-          <strong>Kept</strong> · Claude writes the rule. Code enforces it. PayPal pays it.
+          <strong>Kept</strong> · The Kept agent (powered by Claude) writes the rule. Code enforces it. PayPal pays it.
         </span>
         <span className="footer-muted">Payouts are capped at what was paid and the shop's monthly guarantee budget.</span>
       </footer>

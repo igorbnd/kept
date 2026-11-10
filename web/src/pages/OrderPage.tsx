@@ -227,7 +227,7 @@ function StatusCard({ data }: { data: OrderDetail }) {
             <Spinner size={12} /> Promise broken
           </div>
           <h1 className="status-title">Checking the carrier scans…</h1>
-          <p className="muted">Claude is reading the tracking evidence. Carrier delays are the shop's risk and pay out automatically; anything that looks like the buyer's side goes to the shop for a quick look.</p>
+          <p className="muted">The Kept agent is reading the tracking evidence. Carrier delays are the shop's risk and pay out automatically; anything that looks like the buyer's side goes to the shop for a quick look.</p>
         </section>
       );
     }
@@ -252,11 +252,11 @@ function StatusCard({ data }: { data: OrderDetail }) {
         <h1 className="status-title">Your refund is paused for a quick look</h1>
         <p className="status-lede">
           {scan ? <>The carrier reported: ‘{scan.description}’. </> : null}
-          Kept paused the automatic refund so Harbor &amp; Clay can take a look — Claude flagged it as possibly not the shop's fault.
+          Kept paused the automatic refund so Harbor &amp; Clay can take a look — the Kept agent flagged it as possibly not the shop's fault.
         </p>
         {order.review && <ReviewNote review={order.review} />}
         <p className="frozen">
-          <ShieldCheck size={12} /> Claude can pause a payout, never create one. The amount is fixed by the promise you bought.
+          <ShieldCheck size={12} /> The Kept agent can pause a payout, never create one. The amount is fixed by the promise you bought.
         </p>
       </section>
     );
@@ -357,7 +357,7 @@ function ReviewNote({ review }: { review: NonNullable<Order["review"]> }) {
     <div className="review-note">
       <div className="review-note-head">
         <span className="review-spark">✦</span>
-        <span>Claude's read of the evidence</span>
+        <span>Kept agent's read of the evidence</span>
         <span className={`review-tag attr-${review.attribution}`}>{ATTRIBUTION[review.attribution]}</span>
         <span className="review-conf">{review.confidence} confidence</span>
       </div>
@@ -391,7 +391,7 @@ function MerchantPanel({ data, onDone }: { data: OrderDetail; onDone: () => void
         <h3 className="serif">Merchant decision</h3>
       </div>
       <p className="muted small">
-        Kept found the promise broken, and Claude paused the payout because the scans point at the buyer's side. You decide. The amount was set by code from the frozen promise; neither you nor Claude can change it here.
+        Kept found the promise broken, and the Kept agent paused the payout because the scans point at the buyer's side. You decide. The amount was set by code from the frozen promise; neither you nor the agent can change it here.
       </p>
       <div className="btn-row">
         <button className="btn btn-primary" disabled={!!busy} onClick={() => decide("refund")}>
@@ -432,7 +432,7 @@ const CARRIER_LABEL: Record<CarrierEvent["status"], string> = {
 function agentDetail(e: AgentEvent): string {
   if (e.kind === "assessment") {
     const conf = (e.data as { confidence?: string; error?: string | null } | null) ?? {};
-    return conf.error ? "Claude review · unavailable, paid by default" : `Claude review · ${conf.confidence ?? "?"} confidence · can pause, never pay`;
+    return conf.error ? "Kept agent review · unavailable, paid by default" : `Kept agent review · ${conf.confidence ?? "?"} confidence · can pause, never pay`;
   }
   if (e.kind === "hold") return "Kept · held for merchant";
   return `Kept · ${e.kind}`;
