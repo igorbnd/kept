@@ -9,8 +9,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import type { BreachAssessment, CarrierEvent, Order, Verdict } from "../types.ts";
+import { MODEL } from "./model.ts";
 
-const MODEL = "claude-opus-5-5";
 const TIMEOUT_MS = 15_000;
 const MAX_REASON = 200;
 
@@ -69,17 +69,11 @@ export async function assessBreach(order: Order, productName: string, verdict: V
     max_tokens: 4000,
     system: ASSESSOR_SYSTEM,
     messages: [{ role: "user" as const, content: `Facts (JSON):\n${JSON.stringify(facts, null, 2)}\n\nAssess the breach.` }],
-    output_config: { format: betaZodOutputFormat(Assessment4), effort: "low" as const },
+    output_config: { format: betaZodOutputFormat(Assessment4) },
   };
 
   try {
-    let res;
-    try {
-      res = await getClient().beta.messages.parse({ ...req, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
-    } catch (err) {
-      if (!(err instanceof Anthropic.BadRequestError)) throw err;
-      res = await getClient().beta.messages.parse(req); // fallbacks unsupported → plain request
-    }
+    const res = await getClient().beta.messages.parse(req);
     if (res.stop_reason === "refusal") return fail("Claude declined to assess");
     const out = res.parsed_output;
     if (!out) return fail(`unparseable output (stop_reason ${res.stop_reason})`);

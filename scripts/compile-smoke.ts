@@ -3,7 +3,6 @@ import { compilePromise } from "../server/ai/compiler.ts";
 import { writeRefundMessage, fallbackRefundMessage } from "../server/ai/narrator.ts";
 import type { Order, Product, Verdict } from "../server/types.ts";
 
-const effort = (process.argv[2] as "low" | "medium" | undefined) ?? "low";
 const mug: Product = { id: "p1", name: "Tidepool Mug", description: "Wheel-thrown stoneware, ocean-glaze, 12 oz.", price: 38, shipping: 6.4, image: "", kind: "physical", promise_id: null };
 const tour: Product = { id: "p2", name: "Sunset Kayak Tour", description: "Two hours around Casco Bay islands, guide included.", price: 65, shipping: 0, image: "", kind: "experience", promise_id: null };
 
@@ -22,8 +21,8 @@ await Promise.all(
     if (only !== null && only !== i) return;
     const t = Date.now();
     try {
-      const c = await compilePromise(text, product, "America/New_York", { effort });
-      console.log(`\n### [${i}] ${text}  (${((Date.now() - t) / 1000).toFixed(1)}s, effort=${effort})\n${JSON.stringify(c, null, 2)}`);
+      const c = await compilePromise(text, product, "America/New_York");
+      console.log(`\n### [${i}] ${text}  (${((Date.now() - t) / 1000).toFixed(1)}s, ${process.env.KEPT_MODEL ?? "haiku"})\n${JSON.stringify(c, null, 2)}`);
     } catch (e) {
       console.log(`\n### [${i}] ${text}  FAILED after ${((Date.now() - t) / 1000).toFixed(1)}s: ${(e as Error).message}`);
     }

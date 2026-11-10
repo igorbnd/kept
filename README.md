@@ -26,8 +26,8 @@ Kept makes a different split:
 
 | | |
 |---|---|
-| **0. Suggest** | Not sure what to promise? Click **Suggest promises for this week**. The Kept agent (Claude) reads the product and the moment: season, upcoming US holidays, day and time, the live 7-day Open-Meteo forecast at the shop and five years of weather for the same weeks. It proposes three promises, for example *"Order by Nov 20 and it's here before Thanksgiving, or 20% back"* or *"Rain between 4 and 8 pm on your sunset tour? Half your ticket back."* Each idea is compiled like a typed promise and **priced by code**: weather promises from history ("would have paid out on 15 of 150 days"), delivery promises from stated carrier on-time assumptions. The agent only drafts; the merchant still approves, and the same caps apply. |
-| **1. Write** | In the **Promise Studio**, the merchant types a promise. The Kept agent (Claude `claude-opus-5-5`, structured output validated by Zod) compiles it into a small typed rule language: condition, deadline or weather threshold, and payout. It lists every assumption it made and every question the merchant should settle. Subjective promises ("you'll love it") are refused, and Claude suggests a checkable rewrite. |
+| **0. Suggest** | Not sure what to promise? Click **Suggest promises for this week**. The Kept agent (Claude) reads the product and the moment: season, upcoming US holidays, day and time, the live 7-day Open-Meteo forecast at the shop and five years of weather for the same weeks. It drafts five promises; code compiles and prices each and shows the best three, for example *"Order by Nov 20 and it's here before Thanksgiving, or 20% back"* or *"Rain between 4 and 8 pm on your sunset tour? Half your ticket back."* Each idea is compiled like a typed promise and **priced by code**: weather promises from history ("would have paid out on 15 of 150 days"), delivery promises from stated carrier on-time assumptions. The agent only drafts; the merchant still approves, and the same caps apply. |
+| **1. Write** | In the **Promise Studio**, the merchant types a promise. The Kept agent (Claude Haiku 4.5, structured output validated by Zod) compiles it into a small typed rule language: condition, deadline or weather threshold, and payout. It lists every assumption it made and every question the merchant should settle. Subjective promises ("you'll love it") are refused, and Claude suggests a checkable rewrite. |
 | **2. Approve** | The merchant approves the rule. It goes live as a badge on the product. |
 | **3. Buy** | The buyer pays with **PayPal Checkout** (Orders v2). The promise is frozen into the order, and the shipment's tracking number is attached to the PayPal capture (Orders v2 tracking). |
 | **4. Watch** | A deterministic watcher loop checks the evidence: carrier scans, or real hourly weather from Open-Meteo for the tour window. Every observation is written to an audit trail. |
@@ -118,7 +118,7 @@ web/ (React + Vite + AG Grid)  ──►  server/index.ts (Hono)
 ```
 
 ## AI tools used
-- **Claude `claude-opus-5-5`** (Anthropic API) is the model behind the Kept agent at runtime: it suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
+- **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`, Anthropic API) is the model behind the Kept agent at runtime, chosen to keep a public demo cheap; set `KEPT_MODEL` to run a larger Claude model instead. It suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
 - **Claude Code** helped build this project.
 
 ## Built during the submission period

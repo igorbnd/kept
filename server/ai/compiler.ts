@@ -7,8 +7,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import { CompiledPromise, type Product } from "../types.ts";
+import { MODEL } from "./model.ts";
+import { usHolidays } from "../sources/context.ts";
 
-const MODEL = "claude-opus-5-5";
 
 // ---------- v4 mirror of CompiledPromise (keep in sync with types.ts) ----------
 const Weekday = z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]);
@@ -60,6 +61,7 @@ A rule = { condition, payout }. A promise is "breached" when its condition says 
    - metric: "precipitation_mm" (total over the window), "max_temp_c", "min_temp_c", "max_wind_kmh".
    - "colder than X" -> min_temp_c < X. "hotter than X" -> max_temp_c > X. "windy / gusts over X" -> max_wind_kmh > X. "rain" with no amount -> precipitation_mm >= 1 (so a trace of drizzle doesn't count) and say so in assumptions.
    - hours: {start, end} hours of the event day in local time AT THE EVENT LOCATION (not the merchant's timezone), start inclusive, end exclusive (0-23 / 1-24). Use null for the whole day. If the product clearly implies a time window (e.g. a "sunset" tour, "morning class"), you may use a plausible window, but state it in assumptions and ask the merchant to confirm it in questions. Prefer null when there's no hint.
+   - A weather rule applies to EVERY booking. If the merchant limits which bookings, dates or times qualify ("book by Nov 20", "Thanksgiving week only", "morning tours"), the rule CANNOT enforce that limit: compile the weather condition, say plainly in assumptions that the limit is not enforced and every booking is covered, and ask about it in questions. Never claim in any text that such a limit is enforced.
    - Weather promises ALWAYS set needs_from_buyer = ["event_date", "event_location"] (the buyer supplies these at checkout). Delivery/shipping promises use [].
    - Temperatures are Celsius, wind km/h, rain mm. Convert °F / mph / inches if the merchant uses them and note the conversion.
 
@@ -87,13 +89,21 @@ Set checkable=false, rule=null, data_source="none", needs_from_buyer=[] when:
 - The promise is outside the DSL: price matching, "if it breaks within a year", returns/exchanges, product quality, customer-service response times, anything needing evidence other than carrier tracking or weather.
 - Required pieces are missing (no payout, no measurable deadline/threshold).
 In that case:
-- plain_english explains, kindly and specifically, why Kept can't enforce it automatically (what evidence would be needed that Kept doesn't have).
+- plain_english explains, kindly and specifically, in at most two sentences, why Kept can't enforce it automatically (what evidence would be needed that Kept doesn't have). Say "the buyer", never "you".
 - suggested_rewrite is a concrete, checkable promise in the merchant's voice that keeps the spirit and fits the DSL and this product (physical product -> delivery/shipping; experience -> weather). Use the merchant's own payout if they stated one ("your money back" -> full refund). Otherwise propose a modest one and it's fine because the merchant must accept the rewrite.
+- suggested_rewrite rules (it gets compiled again as-is, so it must pass this compiler):
+  - ONE promise, ONE sentence, under 100 characters. Never offer alternatives ("Or:", "— or …, or …").
+  - Fully concrete: a real weekday, number of business days or hours, or weather threshold. No placeholders like "[date]" or "X days".
+  - Only conditions from the DSL above: delivered/shipped by a deadline, or weather. NEVER damage, defects, quality, returns or satisfaction; Kept can't check those.
+  - Good: "Arrives within 5 business days, or your money back." / "Ships within 2 business days, or shipping's on us." / "If it rains on your tour day, half your money back."
+  - Bad: "If it arrives damaged, your money back." (not checkable) / "Arrives by [date] or your money back." (placeholder) / "Ships fast or 10% back. Or: arrives by Friday." (two promises)
 - badge: still provide a short label, describing the original, e.g. "Not automatically checkable".
 - questions may be [].
 When checkable=true, suggested_rewrite is null.
 
 # Customer-facing text
+- Prefer "50% of the order total" over dollar amounts for percent payouts; code computes the exact amount. If you do give a dollar figure, compute it from the order total above.
+- plain_english for a checkable promise describes ONLY what the rule enforces. Leave out buyer-side conditions the rule ignores (e.g. don't write "if the buyer orders by Tuesday" for a weekday deadline; mention it in assumptions instead).
 - badge: what the buyer sees on the product page. MAX 60 characters including spaces. Punchy, concrete, buyer's language. Use an em dash or a short phrase. Examples: "Arrives by Friday — or shipping's on us", "Rained out? 50% back, automatically", "Ships in 24h — or $5 back". Only promise what the rule enforces: leave out buyer-side conditions the rule can't check (e.g. "Order by Tuesday").
 - plain_english: one or two sentences stating EXACTLY how the code will enforce it, naming the data source ("carrier tracking" or "Open-Meteo"), the precise condition with the threshold/deadline and timezone, and the payout. Example: "If carrier tracking doesn't show the parcel delivered by 11:59 pm Friday (shop time), the buyer is refunded the shipping they paid." Say "the buyer", never "you".
 - Write in plain, warm, precise English. No emojis. No hype.
@@ -109,8 +119,10 @@ function userMessage(text: string, product: Product, merchantTimezone: string, t
 - Kind: ${product.kind} (${product.kind === "physical" ? "shipped by carrier, tracked" : "an experience on a date the buyer picks, at a location"})
 - Price: $${product.price.toFixed(2)}
 - Shipping charged: $${product.shipping.toFixed(2)}
+- Order total (price + shipping, what a percent payout is taken from): $${(product.price + product.shipping).toFixed(2)}
 - Merchant timezone: ${merchantTimezone}
 - Today's date (merchant time): ${today}
+- US holiday dates: ${holidayList(today)}
 
 Merchant's promise, verbatim:
 """
@@ -120,35 +132,35 @@ ${text}
 Compile it.`;
 }
 
+function holidayList(today: string): string {
+  const y = Number(today.slice(0, 4));
+  return [...usHolidays(y), ...usHolidays(y + 1)]
+    .filter((h) => h.date >= today)
+    .slice(0, 8)
+    .map((h) => `${h.name} ${h.date}`)
+    .join(", ");
+}
+
 let client: Anthropic | null = null;
 const getClient = () => (client ??= new Anthropic());
 
-export type CompileOptions = { effort?: "low" | "medium" | "high"; today?: string /* YYYY-MM-DD, merchant time; defaults to the real date */ };
+export type CompileOptions = { today?: string /* YYYY-MM-DD, merchant time; defaults to the real date */ };
 
 export async function compilePromise(text: string, product: Product, merchantTimezone: string, opts: CompileOptions = {}): Promise<CompiledPromise> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("The promise compiler is offline: ANTHROPIC_API_KEY isn't set on the server. The preset promises still work.");
   const req = {
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 4000,
     system: COMPILER_SYSTEM,
     messages: [{ role: "user" as const, content: userMessage(text, product, merchantTimezone, opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: merchantTimezone })) }],
-    output_config: { format: betaZodOutputFormat(CompiledPromise4), effort: opts.effort ?? "low" }, // low matched medium quality in smoke tests at ~4s vs 5-9.5s
+    output_config: { format: betaZodOutputFormat(CompiledPromise4) },
   };
 
   let res;
   try {
-    // Server-side fallback: if the model declines, the API retries on its default fallback model.
-    res = await getClient().beta.messages.parse({ ...req, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
+    res = await getClient().beta.messages.parse(req);
   } catch (err) {
-    if (err instanceof Anthropic.BadRequestError) {
-      try {
-        res = await getClient().beta.messages.parse(req); // fallbacks unsupported → plain request
-      } catch (err2) {
-        throw new Error(`Promise compiler couldn't reach Claude: ${(err2 as Error).message}`);
-      }
-    } else {
-      throw new Error(`Promise compiler couldn't reach Claude: ${(err as Error).message}`);
-    }
+    throw new Error(`Promise compiler couldn't reach Claude: ${(err as Error).message}`);
   }
 
   if (res.stop_reason === "refusal") {

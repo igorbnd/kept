@@ -7,8 +7,8 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import type { ClimateSummary, MomentContext } from "../sources/context.ts";
 import type { Product } from "../types.ts";
+import { MODEL } from "./model.ts";
 
-const MODEL = "claude-opus-5-5";
 
 export const FACTORS = ["product", "season", "holiday", "weekday", "time_of_day", "forecast", "history", "location"] as const;
 export type Factor = (typeof FACTORS)[number];
@@ -27,7 +27,7 @@ export type PromiseIdea = z.infer<typeof Ideas4>["ideas"][number];
 
 export const SUGGESTER_SYSTEM = `You are the Kept agent's promise designer. Kept lets a small merchant attach a guarantee to a product; code then checks real evidence and refunds the buyer through PayPal automatically when the promise breaks.
 
-Your job: propose exactly 3 promises this merchant could offer on this product RIGHT NOW, each one shaped by the intersection of the product and the moment: the season, upcoming holidays, the day of the week and time of day, the real weather forecast at the shop, and the location. The best ideas feel specific to this week, at this place, for this product; something a buyer would smile at and remember. A generic "arrives in 3 days" is a weak idea unless the moment makes it matter.
+Your job: propose exactly 5 promises this merchant could offer on this product RIGHT NOW, each one shaped by the intersection of the product and the moment: the season, upcoming holidays, the day of the week and time of day, the real weather forecast at the shop, and the location. The best ideas feel specific to this week, at this place, for this product; something a buyer would smile at and remember. A generic "arrives in 3 days" is a weak idea unless the moment makes it matter.
 
 # What Kept can enforce (ideas MUST fit one of these, or they can't go live)
 - Physical products (shipped by carrier): "delivered by" or "shipped by" a deadline. Deadlines can be a weekday ("by Friday"), N business days, N hours, or a fixed calendar date ("before Thanksgiving", "by Dec 23"), optionally with an order-by cutoff date ("order by Nov 20").
@@ -35,13 +35,21 @@ Your job: propose exactly 3 promises this merchant could offer on this product R
 - Payout: the shipping cost, a percent of the total (1–100), or a fixed dollar amount.
 
 # Rules
+- Every idea must be enforceable as written. Experiences: ONLY a weather condition during the experience. Physical products: ONLY a delivered-by or shipped-by deadline. Nothing about whether the merchant runs, cancels or reschedules something, product quality, damage or satisfaction.
+- The payout is a refund only: shipping back, a percent back, or a fixed amount. No rescheduling, replacements, store credit, discounts on future orders, or "X or Y" options.
+- Check your date arithmetic: count business days (Mon–Fri) strictly after the order-by cutoff up to and including the delivery date, and leave at least 3. State the count correctly in "why".
+- Use the season exactly as given in the context, and holiday dates exactly as listed.
+- A weather promise covers EVERY booking of the experience. Never limit it to booking dates, tour dates, weeks or times of day the buyer picks ("book by Nov 20 for Thanksgiving week", "tours Dec 1–15", "morning tours only"). To focus on part of the day, name the hours of the tour itself instead ("between 4 and 8 pm on your tour").
+- Weather only applies to experiences; never tie a physical product's promise to weather during shipping or delivery.
+- Examples of GOOD ideas: "If it rains 1 mm or more between 4 and 8 pm on your tour, half your money back." / "Order by Nov 20 and it arrives by Nov 25, in time for Thanksgiving, or 20% back." / "Ships within 1 business day, or your shipping's on us."
+- Examples of BAD ideas: "Book by Nov 20 for Thanksgiving week and get half back if it rains" (booking window can't be enforced) / "Tour before 8 am and get 25% back if it freezes" (can't restrict which tours) / "If it rains while your mug is in transit, shipping back" (weather on a shipped item) / "If we cancel your tour, full refund" (Kept can't see cancellations).
 - Every promise is about the service the buyer actually gets: delivery timing for things that ship, the conditions of the experience for experiences. Never tie a payout to chance unrelated to what was bought (no "if it snows on your delivery day, 20% off" for a mug; no lottery or contest mechanics). That would make it a bet, not a guarantee.
 - Each promise_text is in the merchant's own warm, plain voice, one sentence, under 140 characters, with a concrete condition and a concrete payout. Keep payouts modest and plausible for a small shop: shipping back, 10–25% back, or 50% back for a ruined experience. Use 100% only for something the buyer truly can't enjoy.
 - Holiday dates must be dates from the context, and only holidays within reach of shipping (for a fixed-date delivery promise, include an order-by cutoff that leaves at least 3 business days).
 - For experiences you also get the weather HISTORY of these same weeks over past years. Use it to set thresholds: a good weather promise pays out on roughly 5–25% of days, rare enough for a small shop to afford, common enough to mean something. A threshold that the history says is crossed on most days is a discount, not a guarantee; avoid it. Mention the history in "why" when it shaped the threshold.
 - A weather promise covers every booking; it cannot be limited to certain booking dates or weeks ("book Thanksgiving week and…"). Don't write conditions the rule can't check.
 - Use the forecast honestly. If it shows a windy or wet spell, an experience promise about that is timely; say so in "why" with the actual numbers. Never invent weather or facts not in the context.
-- Make the 3 ideas different from each other (different factor, different mechanic), and different from the product's current live promise if it has one.
+- Make the ideas different from each other (different factor, different mechanic), and different from the product's current live promise if it has one.
 - title: 2–5 words, catchy but clear, e.g. "Thanksgiving table guarantee", "Gale-day refund".
 - why: one sentence, under 160 characters, naming the specific factors (e.g. "Thanksgiving is 16 days out and mugs are a top host gift; a dated cutoff keeps the risk to 3 business days.").
 - factors: the context factors the idea actually uses.
@@ -77,7 +85,7 @@ ${hol}
 - 7-day forecast at the shop (Open-Meteo):
 ${fc}
 ${climate ? climateLines(climate) + "\n" : ""}
-Propose 3 promises.`;
+Propose 5 promises.`;
 }
 
 let client: Anthropic | null = null;
@@ -87,21 +95,20 @@ export async function suggestPromises(product: Product, livePromise: string | nu
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("Promise ideas are offline: ANTHROPIC_API_KEY isn't set on the server.");
   const req = {
     model: MODEL,
-    max_tokens: 16000,
+    max_tokens: 4000,
     system: SUGGESTER_SYSTEM,
     messages: [{ role: "user" as const, content: userMessage(product, livePromise, ctx, climate) }],
-    output_config: { format: betaZodOutputFormat(Ideas4), effort: "low" as const },
+    output_config: { format: betaZodOutputFormat(Ideas4) },
   };
   let res;
   try {
-    res = await getClient().beta.messages.parse({ ...req, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"] });
-  } catch (err) {
-    if (!(err instanceof Anthropic.BadRequestError)) throw new Error(`Couldn't reach Claude for promise ideas: ${(err as Error).message}`);
     res = await getClient().beta.messages.parse(req);
+  } catch (err) {
+    throw new Error(`Couldn't reach Claude for promise ideas: ${(err as Error).message}`);
   }
   if (res.stop_reason === "refusal") throw new Error("Claude declined to suggest promises for this product.");
   if (!res.parsed_output) throw new Error("The idea generator returned output in the wrong shape. Please try again.");
   return res.parsed_output.ideas
-    .slice(0, 3)
+    .slice(0, 5)
     .map((i) => ({ ...i, title: i.title.trim().slice(0, 48), promise_text: i.promise_text.trim().slice(0, 200), why: i.why.trim().slice(0, 220), factors: [...new Set(i.factors)] }));
 }

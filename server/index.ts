@@ -81,7 +81,7 @@ app.post("/api/promises/compile", async (c) => {
   return c.json(rec);
 });
 
-// Promise ideas: the Kept agent (Claude) proposes 3 promises for this product and this moment;
+// Promise ideas: the Kept agent (Claude) proposes promises for this product and this moment;
 // each is compiled like a typed promise (so it arrives as a draft contract) and priced by code.
 const HISTORY_DAYS = 30;
 const HISTORY_YEARS = 5;
@@ -102,12 +102,27 @@ app.post("/api/promises/suggest", async (c) => {
   const history = await historyP; // the agent sees the history too, to pick thresholds a shop can afford
   const climate = history ? climateSummary(history.data, HISTORY_YEARS, HISTORY_DAYS, ctx.today) : null;
   const ideas = await suggestPromises(product, live?.status === "active" ? live.source_text : null, ctx, climate);
+  // The agent drafts 5; every one is compiled and priced, and code keeps the best 3: checkable first,
+  // then enforceable exactly as worded, then affordable but meaningful (pays out on 3–25% of orders).
   const compiled = await Promise.allSettled(ideas.map((i) => compilePromise(i.promise_text, product, tz, { today: ctx.today })));
-  const out = ideas.map((idea, i) => {
+  const scored = ideas.map((idea, i) => {
     const r = compiled[i];
-    if (r.status === "rejected") return { ...idea, promise: null, cost: null, error: redact((r.reason as Error).message) };
-    const rec = promises.put({ id: newId("prm"), product_id: product.id, source_text: idea.promise_text, compiled: r.value, status: "draft", created_at: at.toISOString() });
-    return { ...idea, promise: rec, cost: expectedCost(r.value, product, ctx, at, history), error: null };
+    const value = r.status === "fulfilled" ? r.value : null;
+    const cost = value ? expectedCost(value, product, ctx, at, history) : null;
+    // A weather rule covers every booking, so wording that limits which bookings count ("book by Nov 20…")
+    // promises more than code enforces.
+    const limitsBookings = value?.rule?.condition.kind === "weather" && /\b(book|order|reserve)\w*\b[^.]{0,40}\b(by|before|for)\b|\bweek\b|\bonly\b/i.test(idea.promise_text);
+    const p = cost?.probability ?? 0.1;
+    // Experiences are judged by weather, shipped goods by the carrier; anything else is a mismatch.
+    const mismatch = !!value?.rule && (value.rule.condition.kind === "weather") !== (product.kind === "experience");
+    const rank = !value?.checkable || mismatch ? 4 : limitsBookings ? 3 : p > 0.35 ? 2 : p > 0.25 || p < 0.03 ? 1 : 0;
+    return { idea, value, cost, rank, i, error: r.status === "rejected" ? redact((r.reason as Error).message) : null };
+  });
+  scored.sort((a, b) => a.rank - b.rank || a.i - b.i);
+  const out = scored.slice(0, 3).map(({ idea, value, cost, error }) => {
+    if (!value) return { ...idea, promise: null, cost: null, error };
+    const rec = promises.put({ id: newId("prm"), product_id: product.id, source_text: idea.promise_text, compiled: value, status: "draft", created_at: at.toISOString() });
+    return { ...idea, promise: rec, cost, error: null };
   });
   pruneData();
   logEvent("compiled", `Kept agent (Claude) suggested ${out.length} promises for ${product.name}: ${out.map((o) => `“${o.title}”`).join(", ")}`, null, { product_id: product.id, factors: out.map((o) => o.factors) });

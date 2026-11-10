@@ -3,8 +3,8 @@
 // The refund must never be blocked by the model: any failure falls back to a deterministic template.
 import Anthropic from "@anthropic-ai/sdk";
 import type { Order, Verdict } from "../types.ts";
+import { MODEL } from "./model.ts";
 
-const MODEL = "claude-opus-5-5";
 const SHOP = "Harbor & Clay";
 const SIGNATURE = `— ${SHOP}`;
 const MAX = 255; // PayPal note_to_payer limit
@@ -13,7 +13,7 @@ const TIMEOUT_MS = 15000;
 const SYSTEM = `You write the short note a buyer receives with an automatic refund from ${SHOP}, a small shop. The shop made a guarantee, the guarantee was broken, and the refund has ALREADY been sent. Write the note body only.
 
 Rules:
-- At most 200 characters. One to three short sentences. Do NOT include a signature; it is added for you.
+- At most 200 characters (about 30 words). Two short sentences is ideal; put the refund amount in the FIRST sentence. Do NOT include a signature; it is added for you.
 - Address the buyer by first name if given. Warm, human, specific, a little apologetic, never groveling.
 - Cite the actual evidence concretely (what tracking or the weather record showed, where and when), taken from the facts provided. Do not invent facts.
 - State the exact refund amount and say plainly it's already on its way and they don't need to do anything.
@@ -28,10 +28,13 @@ function firstName(order: Order): string | null {
   return n ? n : null;
 }
 
-/** Truncate to fit `max` on a word boundary, adding an ellipsis if cut. */
+/** Truncate to fit `max`: at the last whole sentence if that keeps most of it, else on a word boundary with an ellipsis. */
 function clip(s: string, max: number): string {
   s = s.replace(/\s+/g, " ").trim();
   if (s.length <= max) return s;
+  const head = s.slice(0, max);
+  const end = Math.max(head.lastIndexOf(". "), head.lastIndexOf("! "), head.endsWith(".") ? head.length - 1 : -1);
+  if (end > max * 0.55) return head.slice(0, end + 1);
   const cut = s.slice(0, max - 1);
   const sp = cut.lastIndexOf(" ");
   return (sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:—–-]+$/, "") + "…";
@@ -73,10 +76,9 @@ export async function writeRefundMessage(order: Order, productName: string, verd
   try {
     const res = await getClient().messages.create({
       model: MODEL,
-      max_tokens: 2000,
+      max_tokens: 400,
       system: SYSTEM,
       messages: [{ role: "user", content: `Facts (JSON):\n${JSON.stringify(facts, null, 2)}\n\nWrite the note.` }],
-      output_config: { effort: "low" },
     });
     if (res.stop_reason === "refusal") throw new Error("refusal");
     const text = res.content
