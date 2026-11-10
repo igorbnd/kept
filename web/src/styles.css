@@ -310,6 +310,7 @@ button {
   padding: 24px 32px 36px;
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   font-size: 13px;
   color: var(--ink-2);

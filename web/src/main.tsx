@@ -83,6 +83,7 @@ function App() {
           <strong>Kept</strong> · The Kept agent (powered by Claude) writes the rule. Code enforces it. PayPal pays it.
         </span>
         <span className="footer-muted">Payouts are capped at what was paid and the shop's monthly guarantee budget.</span>
+        <span className="footer-muted">Harbor &amp; Clay is a fictional demo shop. All payments are PayPal sandbox; no real money moves.</span>
       </footer>
       <DemoDrawer open={demoOpen} onClose={() => setDemoOpen(false)} />
     </>

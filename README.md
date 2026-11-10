@@ -50,6 +50,8 @@ Kept makes a different split:
 
 **Hosted demo:** https://kept-jhjl.onrender.com (free tier: the first load after a quiet spell can take ~1 minute while it wakes up)
 
+_Harbor & Clay, the shop in the demo, is fictional. Its Portland, Maine location is real only so the weather promise can use real Open-Meteo data. All payments are PayPal sandbox; no real money moves._
+
 1. **Shop:** buy the *Tidepool Mug*. Either:
    - Click **"Judges: skip login — pay with PayPal sandbox test card"** (no account needed), or
    - Click the PayPal button and log in with the sandbox buyer below.
