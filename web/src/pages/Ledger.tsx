@@ -374,7 +374,7 @@ function ActivityFeed({ events, loading }: { events: AgentEvent[] | null; loadin
           <i />
           <i />
         </span>
-        <span>kept-agent — activity</span>
+        <span>kept — activity log</span>
         <span className="feed-live">
           <span className="live-dot small" /> live
         </span>

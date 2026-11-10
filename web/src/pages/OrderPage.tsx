@@ -421,8 +421,8 @@ function agentDetail(e: AgentEvent): string {
     const conf = (e.data as { confidence?: string; error?: string | null } | null) ?? {};
     return conf.error ? "Claude review · unavailable, paid by default" : `Claude review · ${conf.confidence ?? "?"} confidence · can pause, never pay`;
   }
-  if (e.kind === "hold") return "Kept agent · held for merchant";
-  return `Kept agent · ${e.kind}`;
+  if (e.kind === "hold") return "Kept · held for merchant";
+  return `Kept · ${e.kind}`;
 }
 
 function Timeline({ data }: { data: OrderDetail }) {

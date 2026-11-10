@@ -312,12 +312,11 @@ app.post("/api/demo/sample", async (c) => {
 
   logEvent("info", `Loading sample history: 4 real sandbox orders; carrier scans and the ${rainyDay} rain are simulated.`);
   setWeatherOverride(rainyDay, home.name, { precipitation_mm: 4 });
-  const [delivered, inTransit, rainedOut, realWeather] = await Promise.all([
-    buy({ product_id: mug.id }),
-    buy({ product_id: mug.id }),
-    buy({ product_id: tour.id, event_date: rainyDay, event_location: home }),
-    buy({ product_id: tour.id, event_date: ymd(3), event_location: home }), // judged on real Open-Meteo data
-  ]);
+  // Sequential on purpose: the sandbox rejects concurrent test-card orders with PAYER_CANNOT_PAY.
+  const delivered = await buy({ product_id: mug.id });
+  const inTransit = await buy({ product_id: mug.id });
+  const rainedOut = await buy({ product_id: tour.id, event_date: rainyDay, event_location: home });
+  const realWeather = await buy({ product_id: tour.id, event_date: ymd(3), event_location: home }); // judged on real Open-Meteo data
   const scan = (o: Order, status: Parameters<typeof pushCarrierEvent>[1], description: string, location: string) => o.tracking_number && pushCarrierEvent(o.tracking_number, status, description, location);
   scan(delivered, "picked_up", "Picked up by carrier", "Portland, ME");
   scan(delivered, "delivered", "Delivered, left at front door", "Front porch");
