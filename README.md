@@ -10,7 +10,16 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), 202
 ## The problem
 Guarantees are the cheapest trust signal a small shop has, and the hardest to keep. A two-person studio can write "arrives by Friday or shipping's on us", but then someone has to check every parcel, notice every miss, and process every refund. In practice the buyer has to notice, complain and argue. Most never do, so the promise quietly turns into marketing.
 
-Existing guarantee products (Sensible Weather, WeatherPromise, ShipAid) sell **fixed** guarantees. Kept lets a merchant write **any** promise and has an agent carry it out.
+
+## How Kept differs from what exists
+Pieces of this already exist. Weather guarantees that pay out automatically ([Sensible Weather](https://www.sensibleweather.com/), [WeatherPromise](https://purchase.weatherpromise.com/us/en/)) are fixed products sold by an insurer. Merchant-run shipping guarantees ([ShipAid](https://www.shipaid.com/)) still rely on the buyer filing a claim. AI support agents (for example [Yuma](https://yuma.ai/ai-support-agent)) can resolve late orders proactively, but a model decides each case. LLM "intelligent contracts" ([GenLayer](https://docs.genlayer.com/understand-genlayer-protocol/typical-use-cases)) also have a model judge each claim.
+
+Kept makes a different split:
+- **The AI compiles the promise; code keeps it.** Claude turns the merchant's words into a typed rule *once*. The merchant reviews and approves it, and from then on no model decides money. The outcome is deterministic, auditable, capped and testable.
+- **The promise is a contract the buyer can see.** The exact rule is shown at checkout and frozen into the order. It isn't an internal policy hidden behind a support bot.
+- **Promises that can't be checked are refused.** "You'll love it or your money back" gets a rewrite that can be checked, not a fake guarantee.
+- **One engine for any promise, in the merchant's own words.** Delivery and weather today, on the same rule language, with no fixed product catalog.
+- **Native to the payment.** Refunds go against the PayPal capture, tracking is attached to the same capture, and a monthly budget caps total exposure.
 
 ## How it works
 
