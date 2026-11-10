@@ -48,7 +48,7 @@ export function Shop() {
               </div>
             ))
           : products?.map((p) => {
-              const live = p.promise?.status === "active" ? p.promise.compiled : null;
+              const live = p.promise?.status === "active" && p.promise_open !== false ? p.promise.compiled : null;
               return (
                 <article className="product-card" key={p.id}>
                   <div className={`product-art art-${p.kind}`}>
@@ -136,7 +136,7 @@ function loadPayPal(clientId: string): Promise<PayPalNs> {
 function Checkout({ product, onClose }: { product: ProductWithPromise; onClose: () => void }) {
   const { config, serverNow } = useClock();
   const toast = useToast();
-  const promise = product.promise?.status === "active" ? product.promise.compiled : null;
+  const promise = product.promise?.status === "active" && product.promise_open !== false ? product.promise.compiled : null;
   const isExperience = product.kind === "experience";
   const [date, setDate] = useState(() => ymdIn(serverNow()));
   const [locIdx, setLocIdx] = useState(0);

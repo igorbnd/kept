@@ -16,6 +16,7 @@ const Deadline4 = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("weekday_after_purchase"), weekday: Weekday }),
   z.object({ kind: z.literal("business_days_after_purchase"), days: z.number().int().min(0).max(60) }),
   z.object({ kind: z.literal("hours_after_purchase"), hours: z.number().int().min(1).max(24 * 60) }),
+  z.object({ kind: z.literal("by_date"), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), order_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable() }),
 ]);
 const Condition4 = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("delivered_by"), deadline: Deadline4 }),
@@ -66,6 +67,7 @@ A rule = { condition, payout }. A promise is "breached" when its condition says 
 - weekday_after_purchase { weekday } — end of day (11:59 pm, merchant time) on the first <weekday> on or after the purchase date. For "arrives by Friday".
 - business_days_after_purchase { days } — end of the Nth business day (Mon–Fri) after purchase. For "in 3 business days". Plain "days" ("in 5 days") also maps here only if the merchant says business days; otherwise use hours_after_purchase with days*24 and note it.
 - hours_after_purchase { hours } — exactly N hours after purchase. For "within 24 hours", "within 48 hours".
+- by_date { date, order_by } — end of day (11:59 pm, merchant time) on a fixed calendar date, YYYY-MM-DD. For "arrives before Thanksgiving", "by Christmas Eve", "by Dec 20". Resolve holidays and named dates to the NEXT occurrence on or after today's date (given in the context) and state the resolved date in assumptions. "Before <holiday>" means delivered by the end of the day BEFORE the holiday; "by/on <holiday>" means by the end of the holiday itself. order_by is the last purchase date the promise covers ("order by Nov 20" -> "2026-11-20"), or null if the merchant gave none; orders placed after order_by (or after date) simply aren't covered, and the badge is hidden then. Never use a date in the past.
 
 ## Payouts (code computes the amount and caps it at what the buyer paid)
 - shipping_cost — refund exactly the shipping the buyer paid. "Shipping's on us", "free shipping if late", "we'll refund shipping".
@@ -75,7 +77,7 @@ A rule = { condition, payout }. A promise is "breached" when its condition says 
 # How to compile
 - Choose the most faithful reading of the merchant's words. Where words are genuinely ambiguous, choose the reasonable reading that is MORE favorable to the buyer (a guarantee that under-delivers on its own wording destroys trust), and record it in assumptions.
 - NEVER invent payout amounts, percentages, or deadlines the merchant did not state or clearly imply. If a payout is missing ("arrives by Friday, guaranteed"), set checkable=false, rule=null, explain what's missing in plain_english, and give a suggested_rewrite that adds a concrete payout as a suggestion the merchant can accept.
-- Conditions attached to the buyer ("order by Tuesday") cannot be enforced by the DSL: the deadline is always relative to purchase. Handle this by mapping the deadline as written and stating the consequence in assumptions (e.g. an order placed Wednesday would still be judged against that week's Friday, or the next one), and ask the merchant in questions if it materially matters.
+- Conditions attached to the buyer ("order by Tuesday") cannot be enforced by the relative deadlines: they are relative to purchase. (With a by_date deadline, a dated cutoff like "order by Nov 20" IS enforced through order_by.) Handle this by mapping the deadline as written and stating the consequence in assumptions (e.g. an order placed Wednesday would still be judged against that week's Friday, or the next one), and ask the merchant in questions if it materially matters.
 - assumptions: every interpretation you made, short, one per line, concrete ("“Friday” = the first Friday on or after purchase, 11:59 pm America/New_York."). Include timezone, thresholds, units, what counts as "rain", what "it's free" refunds, etc. 1-4 items is typical.
 - questions: only real decisions the merchant should make (max 3, each under ~100 characters, no two about the same issue). Use [] if nothing needs deciding. Don't ask about things you already resolved with a clearly safe assumption.
 
@@ -100,7 +102,7 @@ When checkable=true, suggested_rewrite is null.
 - Delivery/shipping conditions make sense only for physical products with a carrier. If a merchant writes a delivery promise for an experience (or weather for a physical item where weather is irrelevant), still compile faithfully if it is checkable, but flag the mismatch in questions.
 - Use the product's shipping cost to sanity-check shipping_cost payouts: if shipping is $0, a shipping refund is worth nothing — mention it in questions.`;
 
-function userMessage(text: string, product: Product, merchantTimezone: string) {
+function userMessage(text: string, product: Product, merchantTimezone: string, today: string) {
   return `Product context:
 - Name: ${product.name}
 - Description: ${product.description}
@@ -108,6 +110,7 @@ function userMessage(text: string, product: Product, merchantTimezone: string) {
 - Price: $${product.price.toFixed(2)}
 - Shipping charged: $${product.shipping.toFixed(2)}
 - Merchant timezone: ${merchantTimezone}
+- Today's date (merchant time): ${today}
 
 Merchant's promise, verbatim:
 """
@@ -120,7 +123,7 @@ Compile it.`;
 let client: Anthropic | null = null;
 const getClient = () => (client ??= new Anthropic());
 
-export type CompileOptions = { effort?: "low" | "medium" | "high" };
+export type CompileOptions = { effort?: "low" | "medium" | "high"; today?: string /* YYYY-MM-DD, merchant time; defaults to the real date */ };
 
 export async function compilePromise(text: string, product: Product, merchantTimezone: string, opts: CompileOptions = {}): Promise<CompiledPromise> {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("The promise compiler is offline: ANTHROPIC_API_KEY isn't set on the server. The preset promises still work.");
@@ -128,7 +131,7 @@ export async function compilePromise(text: string, product: Product, merchantTim
     model: MODEL,
     max_tokens: 16000,
     system: COMPILER_SYSTEM,
-    messages: [{ role: "user" as const, content: userMessage(text, product, merchantTimezone) }],
+    messages: [{ role: "user" as const, content: userMessage(text, product, merchantTimezone, opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: merchantTimezone })) }],
     output_config: { format: betaZodOutputFormat(CompiledPromise4), effort: opts.effort ?? "low" }, // low matched medium quality in smoke tests at ~4s vs 5-9.5s
   };
 
@@ -155,11 +158,11 @@ export async function compilePromise(text: string, product: Product, merchantTim
   if (!res.parsed_output) throw new Error("The promise compiler returned output that didn't match the rule format. Please try again.");
 
   const out = CompiledPromise.parse(res.parsed_output);
-  return normalize(out);
+  return normalize(out, opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: merchantTimezone }));
 }
 
 /** Enforce invariants the schema can't express, so downstream code can trust them. */
-function normalize(c: CompiledPromise): CompiledPromise {
+function normalize(c: CompiledPromise, today: string): CompiledPromise {
   const out: CompiledPromise = { ...c, questions: c.questions.slice(0, 3), badge: clampBadge(c.badge) };
   if (!out.checkable || !out.rule) {
     return { ...out, checkable: false, rule: null, data_source: "none", needs_from_buyer: [] };
@@ -168,6 +171,13 @@ function normalize(c: CompiledPromise): CompiledPromise {
   out.data_source = isWeather ? "open_meteo_weather" : "carrier_tracking";
   out.needs_from_buyer = isWeather ? ["event_date", "event_location"] : [];
   out.suggested_rewrite = null;
+  const cond = out.rule.condition;
+  if ((cond.kind === "delivered_by" || cond.kind === "shipped_by") && cond.deadline.kind === "by_date") {
+    const dl = cond.deadline;
+    if (dl.date < today) throw new Error(`The promise compiled to a date that has already passed (${dl.date}). Try naming the date explicitly.`);
+    // A cutoff after the delivery date means nothing: no order placed then could arrive in time.
+    if (dl.order_by && dl.order_by > dl.date) out.rule = { ...out.rule, condition: { ...cond, deadline: { ...dl, order_by: dl.date } } };
+  }
   return out;
 }
 

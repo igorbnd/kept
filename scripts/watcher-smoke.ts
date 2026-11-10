@@ -36,6 +36,72 @@ ok("48 hours exact", () =>
 ok("fmtLocal", () => assert.equal(W.fmtLocal(new Date("2026-11-14T04:59:59Z"), TZ), "Fri 11:59 pm"));
 ok("fmtHours", () => { assert.equal(W.fmtHours({ start: 16, end: 20 }), "4–8 pm"); assert.equal(W.fmtHours({ start: 10, end: 14 }), "10 am–2 pm"); assert.equal(W.fmtHours({ start: 0, end: 24 }), "all day"); });
 
+console.log("Fixed-date deadlines and promise ideas context");
+const thanks = { kind: "by_date", date: "2026-11-25", order_by: "2026-11-20" } as const;
+ok("by_date -> 23:59:59 local that day", () =>
+  assert.equal(W.computeDeadline(thanks, new Date("2026-11-10T15:00:00Z"), TZ).toISOString(), "2026-11-26T04:59:59.000Z"));
+const fixedDate = (order_by: string | null) => ({ checkable: true, rule: { condition: { kind: "delivered_by", deadline: { kind: "by_date", date: "2026-11-25", order_by } }, payout: { kind: "percent_of_total", percent: 20 } } }) as unknown as CompiledPromise;
+ok("open through the cutoff day (local), closed after", () => {
+  assert.equal(W.promiseOpen(fixedDate("2026-11-20"), new Date("2026-11-21T04:30:00Z"), TZ), true); // Nov 20, 11:30 pm EST
+  assert.equal(W.promiseOpen(fixedDate("2026-11-20"), new Date("2026-11-21T05:30:00Z"), TZ), false); // Nov 21, 12:30 am EST
+});
+ok("no cutoff -> open until the date itself", () => {
+  assert.equal(W.promiseOpen(fixedDate(null), new Date("2026-11-25T20:00:00Z"), TZ), true);
+  assert.equal(W.promiseOpen(fixedDate(null), new Date("2026-11-26T15:00:00Z"), TZ), false);
+});
+ok("relative promises never close", () =>
+  assert.equal(W.promiseOpen({ checkable: true, rule: { condition: { kind: "delivered_by", deadline: fri }, payout: { kind: "shipping_cost" } } } as unknown as CompiledPromise, new Date("2030-01-01T00:00:00Z"), TZ), true));
+const ctxMod = await import("../server/sources/context.ts");
+ok("US holidays 2026", () => {
+  const h = Object.fromEntries(ctxMod.usHolidays(2026).map((x) => [x.name, x.date]));
+  assert.equal(h["Thanksgiving"], "2026-11-26");
+  assert.equal(h["Black Friday"], "2026-11-27");
+  assert.equal(h["Cyber Monday"], "2026-11-30");
+  assert.equal(h["Mother's Day"], "2026-05-10");
+  assert.equal(h["Memorial Day"], "2026-05-25");
+  assert.equal(h["Father's Day"], "2026-06-21");
+  assert.equal(h["Labor Day"], "2026-09-07");
+});
+ok("upcoming holidays span the new year", () => {
+  const names = ctxMod.upcomingHolidays("2026-12-20").map((x) => x.name);
+  assert.deepEqual(names.slice(0, 3), ["Christmas Eve", "Christmas Day", "New Year's Eve"]);
+  assert.ok(names.includes("New Year's Day") && names.includes("Valentine's Day"));
+});
+ok("seasons", () => {
+  assert.equal(ctxMod.seasonOf("2026-11-10", 43.6), "late autumn");
+  assert.equal(ctxMod.seasonOf("2026-01-15", 43.6), "mid winter");
+  assert.equal(ctxMod.seasonOf("2026-01-15", -33.9), "mid summer");
+});
+const pricing = await import("../server/pricing.ts");
+const mug = { id: "p", name: "Mug", description: "", price: 38, shipping: 6.4, image: "", kind: "physical", promise_id: null } as const;
+const tourP = { ...mug, name: "Tour", price: 65, shipping: 0, kind: "experience" } as const;
+const ctx0 = { today: "2026-11-10", weekday: "Tuesday", part_of_day: "afternoon", season: "late autumn", location: "Portland, ME", upcoming_holidays: [], forecast: [], forecast_url: null } as const;
+ok("fixed-date promise priced from its cutoff day, peak-season bump", () => {
+  const c = pricing.expectedCost(fixedDate("2026-11-20"), mug, ctx0, new Date("2026-11-10T15:00:00Z"), null)!;
+  // Nov 20 (Fri) -> Nov 25 (Wed): 3 business days -> 10%, ×1.5 peak = 15%; payout 20% of $44.40 = $8.88
+  assert.equal(c.probability, 0.15);
+  assert.equal(c.payout, 8.88);
+  assert.equal(c.expected, 1.33);
+});
+ok("weather promise priced from history (2 of 4 days)", () => {
+  const rain = { checkable: true, rule: { condition: { kind: "weather", metric: "precipitation_mm", op: ">=", threshold: 1, hours: { start: 16, end: 20 } }, payout: { kind: "percent_of_total", percent: 50 } } } as unknown as CompiledPromise;
+  const time: string[] = [], precipitation: number[] = [], temperature_2m: number[] = [], wind_speed_10m: number[] = [];
+  ["2025-11-10", "2025-11-11", "2024-11-10", "2024-11-11"].forEach((d, i) => {
+    for (let h = 0; h < 24; h++) {
+      time.push(`${d}T${String(h).padStart(2, "0")}:00`);
+      // day 0: 2 mm in the window (hit); day 1: 5 mm at 10 am only (miss); day 2: 0.6+0.6 mm (hit); day 3: dry
+      precipitation.push(i === 0 && h === 17 ? 2 : i === 1 && h === 10 ? 5 : i === 2 && (h === 16 || h === 19) ? 0.6 : 0);
+      temperature_2m.push(5);
+      wind_speed_10m.push(10);
+    }
+  });
+  const c = pricing.expectedCost(rain, tourP, ctx0, new Date(), { data: { time, precipitation, temperature_2m, wind_speed_10m }, years: 2, days: 2 })!;
+  assert.equal(c.probability, 0.5);
+  assert.equal(c.payout, 32.5);
+  assert.equal(c.expected, 16.25);
+  assert.equal(c.method, "weather_history");
+});
+
 console.log("Payouts");
 const baseOrder = (over: Partial<Order> = {}): Order => ({
   id: db.newId("ord"), product_id: "prod_x", promise_id: null, promise_snapshot: null, paypal_order_id: "PP", paypal_capture_id: "CAP123",

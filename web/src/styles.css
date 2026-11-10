@@ -2290,6 +2290,135 @@ textarea:focus {
 }
 
 /* ---------- responsive ---------- */
+/* ---------- Promise ideas ---------- */
+.step-label-row {
+  flex-wrap: wrap;
+}
+.btn-suggest {
+  margin-left: auto;
+  gap: 7px;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  color: var(--teal-2);
+  background: linear-gradient(135deg, var(--teal-tint), #fbefe6);
+  border: 1px solid rgba(14, 90, 87, 0.28);
+}
+.btn-suggest:hover:not(:disabled) {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(14, 90, 87, 0.1);
+}
+.back-link {
+  border: 0;
+  background: none;
+  color: var(--teal);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 10px;
+}
+.ideas {
+  gap: 16px;
+}
+.ideas-credit {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ideas-title {
+  font-size: 24px;
+  margin: 0 0 10px;
+}
+.moment-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.moment-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.idea-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.idea {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  animation: page-in 0.35s ease both;
+}
+.idea-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.idea-head strong {
+  font-size: 18px;
+}
+.idea-factors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.factor {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--teal);
+  background: var(--teal-tint);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.idea-text {
+  font-family: var(--serif);
+  font-size: 16.5px;
+  margin: 8px 0 4px;
+}
+.idea-why {
+  margin: 0 0 10px;
+}
+.idea-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.idea-cost {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 8px;
+  cursor: help;
+}
+.contract-cost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 6px;
+}
+.idea-cost.ok {
+  color: var(--green-2);
+  background: var(--green-soft);
+}
+.idea-cost.warn {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
 @media (max-width: 1280px) {
   .ledger-grid {
     grid-template-columns: 170px minmax(0, 1fr) 300px;

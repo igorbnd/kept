@@ -17,7 +17,7 @@ export type Config = {
   clock_offset_ms: number;
 };
 
-export type ProductWithPromise = Product & { promise: PromiseRecord | null };
+export type ProductWithPromise = Product & { promise: PromiseRecord | null; promise_open?: boolean };
 export type OrderRow = Order & { product_name: string };
 export type OrderDetail = { order: Order; product: Product | undefined; carrier_events: CarrierEvent[]; agent_events: AgentEvent[]; pending_payout?: number | null };
 export type Stats = {
@@ -68,3 +68,33 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
 }
 
 export const post = <T>(path: string, body: unknown = {}) => api<T>(path, { method: "POST", body });
+
+// ---------- Promise ideas (POST /api/promises/suggest) ----------
+
+export type ExpectedCost = {
+  probability: number;
+  payout: number;
+  expected: number;
+  method: "weather_history" | "carrier_assumption";
+  basis: string;
+};
+export type PromiseIdea = {
+  title: string;
+  promise_text: string;
+  why: string;
+  factors: string[];
+  promise: PromiseRecord | null;
+  cost: ExpectedCost | null;
+  error: string | null;
+};
+export type MomentContext = {
+  today: string;
+  weekday: string;
+  part_of_day: string;
+  season: string;
+  location: string;
+  upcoming_holidays: { name: string; date: string; days_away: number }[];
+  forecast: { date: string; weekday: string; rain_mm: number; rain_chance_pct: number | null; high_c: number; low_c: number; wind_max_kmh: number }[];
+  climate: { years: number; window: string } | null;
+};
+export type SuggestResponse = { context: MomentContext; ideas: PromiseIdea[] };

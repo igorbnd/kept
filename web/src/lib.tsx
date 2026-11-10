@@ -80,6 +80,10 @@ export function timeAgo(iso: string, nowMs: number) {
 type Rule = NonNullable<CompiledPromise["rule"]>;
 type Deadline = Extract<Rule["condition"], { kind: "delivered_by" }>["deadline"];
 
+const fmtYmd = (ymd: string) => {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d, 12)).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" });
+};
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function describeDeadline(d: Deadline) {
@@ -90,6 +94,8 @@ export function describeDeadline(d: Deadline) {
       return `within ${d.days} business day${d.days === 1 ? "" : "s"}`;
     case "hours_after_purchase":
       return `within ${d.hours} hours`;
+    case "by_date":
+      return `by ${fmtYmd(d.date)}${d.order_by ? ` (orders by ${fmtYmd(d.order_by)})` : ""}`;
   }
 }
 

@@ -5,15 +5,18 @@ import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { z, ZodError } from "zod";
 import { compilePromise } from "./ai/compiler.ts";
+import { suggestPromises } from "./ai/suggester.ts";
+import { expectedCost } from "./pricing.ts";
 import { advanceClock, agentEvents, clockOffsetMs, logEvent, newId, now, orders, products, promises, pruneData, resetAll, resetClock } from "./db.ts";
 import { MERCHANT } from "./merchant.ts";
 import { addTracking, captureOrder, createOrder, SANDBOX_TEST_CARD } from "./paypal.ts";
 import { rateLimit, redact } from "./safety.ts";
 import { seedProducts, seedPromises } from "./seed.ts";
 import { CARRIER_NAME, createShipment, getCarrierEvents, pushCarrierEvent } from "./sources/carrier.ts";
+import { climateSummary, momentContext, sameWindowHistory } from "./sources/context.ts";
 import { clearWeatherOverrides, setWeatherOverride } from "./sources/weather.ts";
 import type { Order } from "./types.ts";
-import { computeDeadline, computePayout, decideHeld, ReviewError, startWatcher, tick } from "./watcher.ts";
+import { computeDeadline, computePayout, decideHeld, localDate, promiseOpen, ReviewError, startWatcher, tick } from "./watcher.ts";
 
 const app = new Hono();
 
@@ -35,6 +38,7 @@ app.use("/api/*", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error
 const writeLimit = rateLimit("api", 300, TEN_MIN, "changes");
 app.use("/api/*", (c, next) => (c.req.method === "GET" ? next() : writeLimit(c, next)));
 app.post("/api/promises/compile", rateLimit("compile", 10, TEN_MIN, "promise compiles", 60));
+app.post("/api/promises/suggest", rateLimit("suggest", 6, TEN_MIN, "promise idea requests", 30));
 app.post("/api/orders", rateLimit("orders", 30, TEN_MIN, "orders", 150));
 app.post("/api/orders/:id/capture", rateLimit("capture", 40, TEN_MIN, "payment captures", 200));
 app.post("/api/orders/:id/review", rateLimit("review", 30, TEN_MIN, "merchant decisions", 150));
@@ -54,7 +58,12 @@ app.get("/api/config", (c) =>
 );
 
 app.get("/api/products", (c) =>
-  c.json(products.all().map((p) => ({ ...p, promise: p.promise_id ? promises.get(p.promise_id) : null }))),
+  c.json(
+    products.all().map((p) => {
+      const promise = p.promise_id ? promises.get(p.promise_id) : null;
+      return { ...p, promise, promise_open: promiseOpen(promise?.compiled ?? null, now(), MERCHANT.timezone) };
+    }),
+  ),
 );
 
 // ---------- Promise studio ----------
@@ -65,11 +74,44 @@ app.post("/api/promises/compile", async (c) => {
   const body = z.object({ product_id: z.string().max(64), text: z.string().trim().min(3).max(500) }).parse(await c.req.json());
   const product = products.get(body.product_id);
   if (!product) return c.json({ error: "product not found" }, 404);
-  const compiled = await compilePromise(body.text, product, MERCHANT.timezone);
+  const compiled = await compilePromise(body.text, product, MERCHANT.timezone, { today: localDate(now(), MERCHANT.timezone) });
   const rec = promises.put({ id: newId("prm"), product_id: product.id, source_text: body.text, compiled, status: "draft", created_at: now().toISOString() });
   pruneData();
   logEvent("compiled", `Compiled “${body.text}” → ${compiled.checkable ? compiled.badge : "not checkable"}`, null, { promise_id: rec.id, compiled });
   return c.json(rec);
+});
+
+// Promise ideas: the Kept agent (Claude) proposes 3 promises for this product and this moment;
+// each is compiled like a typed promise (so it arrives as a draft contract) and priced by code.
+const HISTORY_DAYS = 30;
+const HISTORY_YEARS = 5;
+app.post("/api/promises/suggest", async (c) => {
+  const body = z.object({ product_id: z.string().max(64) }).parse(await c.req.json());
+  const product = products.get(body.product_id);
+  if (!product) return c.json({ error: "product not found" }, 404);
+  const at = now();
+  const tz = MERCHANT.timezone;
+  const ctx = await momentContext(at, tz, MERCHANT.home);
+  const live = product.promise_id ? promises.get(product.promise_id) : null;
+  const historyP =
+    product.kind === "experience"
+      ? sameWindowHistory(MERCHANT.home.lat, MERCHANT.home.lon, ctx.today, HISTORY_DAYS, HISTORY_YEARS)
+          .then((h) => ({ data: h.data, years: HISTORY_YEARS, days: HISTORY_DAYS }))
+          .catch(() => null)
+      : Promise.resolve(null);
+  const history = await historyP; // the agent sees the history too, to pick thresholds a shop can afford
+  const climate = history ? climateSummary(history.data, HISTORY_YEARS, HISTORY_DAYS, ctx.today) : null;
+  const ideas = await suggestPromises(product, live?.status === "active" ? live.source_text : null, ctx, climate);
+  const compiled = await Promise.allSettled(ideas.map((i) => compilePromise(i.promise_text, product, tz, { today: ctx.today })));
+  const out = ideas.map((idea, i) => {
+    const r = compiled[i];
+    if (r.status === "rejected") return { ...idea, promise: null, cost: null, error: redact((r.reason as Error).message) };
+    const rec = promises.put({ id: newId("prm"), product_id: product.id, source_text: idea.promise_text, compiled: r.value, status: "draft", created_at: at.toISOString() });
+    return { ...idea, promise: rec, cost: expectedCost(r.value, product, ctx, at, history), error: null };
+  });
+  pruneData();
+  logEvent("compiled", `Kept agent (Claude) suggested ${out.length} promises for ${product.name}: ${out.map((o) => `“${o.title}”`).join(", ")}`, null, { product_id: product.id, factors: out.map((o) => o.factors) });
+  return c.json({ context: { ...ctx, climate }, ideas: out });
 });
 
 app.post("/api/promises/:id/activate", (c) => {
@@ -100,7 +142,8 @@ async function placeOrder(body: CreateOrderInput): Promise<{ error: string; stat
   const product = products.get(body.product_id);
   if (!product) return { error: "product not found", status: 404 };
   const promise = product.promise_id ? promises.get(product.promise_id) : null;
-  const compiled = promise?.status === "active" ? promise.compiled : null;
+  // A fixed-date promise past its order-by cutoff isn't offered, so the order carries no promise.
+  const compiled = promise?.status === "active" && promiseOpen(promise.compiled, now(), MERCHANT.timezone) ? promise.compiled : null;
   if (compiled?.needs_from_buyer.includes("event_date") && !body.event_date) return { error: "Pick a tour date.", status: 400 };
 
   const id = newId("ord");

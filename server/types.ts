@@ -8,6 +8,8 @@ import { z } from "zod";
 
 // ---------- Promise rule DSL (what Claude compiles to) ----------
 
+const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 export const Deadline = z.discriminatedUnion("kind", [
   // "arrives by Friday" -> the first <weekday> on/after purchase (end of day, merchant tz)
   z.object({ kind: z.literal("weekday_after_purchase"), weekday: z.enum(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]) }),
@@ -15,6 +17,9 @@ export const Deadline = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("business_days_after_purchase"), days: z.number().int().min(0).max(60) }),
   // "within 48 hours"
   z.object({ kind: z.literal("hours_after_purchase"), hours: z.number().int().min(1).max(24 * 60) }),
+  // "arrives before Thanksgiving" -> end of a fixed calendar date (merchant tz). Orders placed after
+  // `order_by` (or after `date` itself) aren't covered: the promise is closed and isn't offered.
+  z.object({ kind: z.literal("by_date"), date: IsoDate, order_by: IsoDate.nullable() }),
 ]);
 export type Deadline = z.infer<typeof Deadline>;
 

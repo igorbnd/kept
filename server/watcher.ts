@@ -9,7 +9,7 @@ import { MERCHANT } from "./merchant.ts";
 import { refundCapture } from "./paypal.ts";
 import { getCarrierEvents } from "./sources/carrier.ts";
 import { getWeather } from "./sources/weather.ts";
-import type { CarrierEvent, Condition, Deadline, Evidence, Order, OrderReview, PromiseRule, Verdict } from "./types.ts";
+import type { CarrierEvent, CompiledPromise, Condition, Deadline, Evidence, Order, OrderReview, PromiseRule, Verdict } from "./types.ts";
 
 // ---------- Timezone math (Intl only, no deps) ----------
 
@@ -82,6 +82,10 @@ const localDayNumber = (date: Date, tz: string) => {
 /** Deadline instant for delivery/ship promises, from purchase time, in the merchant timezone. */
 export function computeDeadline(deadline: Deadline, purchasedAt: Date, timezone: string): Date {
   if (deadline.kind === "hours_after_purchase") return new Date(purchasedAt.getTime() + deadline.hours * 3600_000);
+  if (deadline.kind === "by_date") {
+    const [y, m, d] = deadline.date.split("-").map(Number);
+    return zonedTimeToUtc(y, m, d, 23, 59, 59, timezone);
+  }
 
   const p = localParts(purchasedAt, timezone);
   // Calendar arithmetic on the local date, using a UTC Date purely as a date counter.
@@ -98,6 +102,22 @@ export function computeDeadline(deadline: Deadline, purchasedAt: Date, timezone:
     }
   }
   return zonedTimeToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), 23, 59, 59, timezone);
+}
+
+/** YYYY-MM-DD for `date` in `timeZone`. */
+export function localDate(date: Date, timeZone: string): string {
+  const p = localParts(date, timeZone);
+  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+}
+
+/**
+ * Whether a promise can still be offered to a buyer purchasing at `at`. Only fixed-date promises
+ * close: after their order-by cutoff (or the date itself), new orders simply aren't covered.
+ */
+export function promiseOpen(compiled: CompiledPromise | null, at: Date, timezone: string): boolean {
+  const cond = compiled?.rule?.condition;
+  if (!cond || cond.kind === "weather" || cond.deadline.kind !== "by_date") return true;
+  return localDate(at, timezone) <= (cond.deadline.order_by ?? cond.deadline.date);
 }
 
 const cents = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
