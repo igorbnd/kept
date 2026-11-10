@@ -218,6 +218,19 @@ function StatusCard({ data }: { data: OrderDetail }) {
   }
 
   if (order.status === "breached") {
+    const cond = order.promise_snapshot?.rule?.condition.kind;
+    const reviewing = !order.review && (cond === "delivered_by" || cond === "shipped_by");
+    if (reviewing) {
+      return (
+        <section className="card status-card status-breached">
+          <div className="status-eyebrow tone-amber">
+            <Spinner size={12} /> Promise broken
+          </div>
+          <h1 className="status-title">Checking the carrier scans…</h1>
+          <p className="muted">Claude is reading the tracking evidence. Carrier delays are the shop's risk and pay out automatically; anything that looks like the buyer's side goes to the shop for a quick look.</p>
+        </section>
+      );
+    }
     return (
       <section className="card status-card status-breached">
         <div className="status-eyebrow tone-amber">
