@@ -12,12 +12,13 @@ Guarantees are the cheapest trust signal a small shop has, and the hardest to ke
 
 
 ## How Kept differs from what exists
-Pieces of this already exist. Weather guarantees that pay out automatically ([Sensible Weather](https://www.sensibleweather.com/), [WeatherPromise](https://purchase.weatherpromise.com/us/en/)) are fixed products sold by an insurer. Merchant-run shipping guarantees ([ShipAid](https://www.shipaid.com/)) still rely on the buyer filing a claim. AI support agents (for example [Yuma](https://yuma.ai/ai-support-agent)) can resolve late orders proactively, but a model decides each case. LLM "intelligent contracts" ([GenLayer](https://docs.genlayer.com/understand-genlayer-protocol/typical-use-cases)) also have a model judge each claim.
+Pieces of this already exist. Weather guarantees that pay out automatically ([Sensible Weather](https://www.sensibleweather.com/), [WeatherPromise](https://purchase.weatherpromise.com/us/en/)) are fixed products sold by an insurer. Merchant-run shipping guarantees ([ShipAid](https://www.shipaid.com/)) still rely on the buyer filing a claim. AI support agents (for example [Yuma](https://yuma.ai/ai-support-agent)) can resolve late orders proactively, but a model decides each case. LLM "intelligent contracts" ([GenLayer](https://docs.genlayer.com/understand-genlayer-protocol/typical-use-cases)) also have a model judge each claim. Delivery-date tools ([Narvar Promise](https://corp.narvar.com/promise), [LateShipment Promise](https://apps.shopify.com/estimated-delivery-date-1), [Shopify Shop Promise](https://www.shopify.com/shop-promise)) already factor in holidays and weather, but to *estimate* a date, not to back it with a payout.
 
 Kept makes a different split:
 - **The AI compiles the promise; code keeps it.** The Kept agent turns the merchant's words into a typed rule *once*. The merchant reviews and approves it, and from then on no model decides money. The outcome is deterministic, auditable, capped and testable.
 - **The promise is a contract the buyer can see.** The exact rule is shown at checkout and frozen into the order. It isn't an internal policy hidden behind a support bot.
 - **Promises that can't be checked are refused.** "You'll love it or your money back" gets a rewrite that can be checked, not a fake guarantee.
+- **Promises designed for the moment, priced before they go live.** The Kept agent suggests promises from the intersection of the product, the season, upcoming holidays, the day, this week's forecast and years of local weather history. Code prices each one, so the merchant sees what it will likely cost per order before approving it.
 - **One engine for any promise, in the merchant's own words.** Delivery and weather today, on the same rule language, with no fixed product catalog.
 - **Native to the payment.** Refunds go against the PayPal capture, tracking is attached to the same capture, and a monthly budget caps total exposure.
 
@@ -25,6 +26,7 @@ Kept makes a different split:
 
 | | |
 |---|---|
+| **0. Suggest** | Not sure what to promise? Click **Suggest promises for this week**. The Kept agent (Claude) reads the product and the moment: season, upcoming US holidays, day and time, the live 7-day Open-Meteo forecast at the shop and five years of weather for the same weeks. It proposes three promises, for example *"Order by Nov 20 and it's here before Thanksgiving, or 20% back"* or *"Rain between 4 and 8 pm on your sunset tour? Half your ticket back."* Each idea is compiled like a typed promise and **priced by code**: weather promises from history ("would have paid out on 15 of 150 days"), delivery promises from stated carrier on-time assumptions. The agent only drafts; the merchant still approves, and the same caps apply. |
 | **1. Write** | In the **Promise Studio**, the merchant types a promise. The Kept agent (Claude `claude-opus-5-5`, structured output validated by Zod) compiles it into a small typed rule language: condition, deadline or weather threshold, and payout. It lists every assumption it made and every question the merchant should settle. Subjective promises ("you'll love it") are refused, and Claude suggests a checkable rewrite. |
 | **2. Approve** | The merchant approves the rule. It goes live as a badge on the product. |
 | **3. Buy** | The buyer pays with **PayPal Checkout** (Orders v2). The promise is frozen into the order, and the shipment's tracking number is attached to the PayPal capture (Orders v2 tracking). |
@@ -32,6 +34,8 @@ Kept makes a different split:
 | **4½. Review** | When a delivery promise breaks, the Kept agent (Claude) reads the carrier scans and decides *whose fault* the miss looks like. Ordinary delays, weather and lost parcels are the shop's risk, so the payout goes ahead. If the evidence points at the buyer ("Delivery attempted — no one available to sign", "address incomplete"), the Kept agent **pauses** the payout and the merchant decides. The agent can hold a payout. It can never create one, approve one or change the amount. If the model is unavailable, the default is to pay. |
 | **5. Keep** | When a promise breaks, code computes the payout and **PayPal Payments v2** issues a partial refund (idempotent, with `note_to_payer`). The Kept agent (Claude) writes the buyer a short note citing the evidence. |
 | **6. Account** | The merchant's **AG Grid ledger** shows every order, its latest evidence, the decision, the payout and the PayPal refund id, with live updates and a budget meter. |
+
+![Promise ideas](docs/screenshots/ideas.png)
 
 | Promise Studio | Ledger (AG Grid) |
 |---|---|
@@ -72,7 +76,7 @@ _Harbor & Clay, the shop in the demo, is fictional. Its Portland, Maine location
    - Then click **Jump to Saturday 00:01**.
 4. Within seconds the order page flips to **"$6.40 refunded to your PayPal"**, with the Kept agent's Claude-written note and the real PayPal sandbox refund id.
 5. Open **Ledger** to see it in AG Grid, plus the activity log (every observation, agent review and payout).
-6. Open **Promise Studio** and write your own promise. Try *"You'll love it or your money back"* to see a rejection.
+6. Open **Promise Studio**, pick a product and click **Suggest promises for this week** (about 15 seconds): three promises fitted to this week, each with its expected cost. Click **Use this** to see the compiled contract. Or write your own: try *"You'll love it or your money back"* to see a rejection.
 
 The kayak tour checks **real weather** for the date and city you pick. Demo controls can also simulate rain; simulated evidence is clearly labelled as such.
 
@@ -104,15 +108,17 @@ Public deploys are rate-limited per IP (e.g. 10 promise compiles, 30 orders, 3 d
 ```
 web/ (React + Vite + AG Grid)  ──►  server/index.ts (Hono)
                                         ├─ ai/compiler.ts   Claude: promise → typed rule (structured output)
+                                        ├─ ai/suggester.ts  Claude: promise ideas from product × season × holidays × forecast × history
+                                        ├─ pricing.ts       expected cost per order (Open-Meteo history / carrier assumptions)
                                         ├─ ai/narrator.ts   Claude: buyer refund note (≤255 chars, with fallback)
                                         ├─ paypal.ts        Orders v2 create/capture/track · Payments v2 refund
                                         ├─ watcher.ts       autonomous loop: evidence → verdict → (Claude review) → capped payout
-                                        ├─ sources/         Open-Meteo weather (real) · KeptPost carrier (simulated)
+                                        ├─ sources/         Open-Meteo weather, forecast and history (real) · holidays · KeptPost carrier (simulated)
                                         └─ db.ts            Node built-in SQLite + simulated clock for demos
 ```
 
 ## AI tools used
-- **Claude `claude-opus-5-5`** (Anthropic API) is the model behind the Kept agent at runtime: it compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those three functions.
+- **Claude `claude-opus-5-5`** (Anthropic API) is the model behind the Kept agent at runtime: it suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
 - **Claude Code** helped build this project.
 
 ## Built during the submission period
