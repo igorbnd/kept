@@ -37,6 +37,17 @@ Kept makes a different split:
 |---|---|
 | ![Studio](docs/screenshots/studio-reject.png) | ![Ledger](docs/screenshots/ledger.png) |
 
+## Why it matters for PayPal
+Kept is built on PayPal from end to end: the purchase, the shipment and the payout all run against the same PayPal capture. That gives PayPal and its merchants five things.
+
+- **Disputes settled before they're opened.** A late parcel is exactly what turns into an *Item Not Received* dispute. Kept refunds the agreed amount, with a note citing the scan, before the buyer would think to complain. A buyer who already has their money and an explanation has little reason to open a dispute. That saves the merchant a fight, the buyer a wait, and PayPal a case to review.
+- **Tracking on every order, automatically.** Kept attaches the tracking number to the capture through the Orders v2 tracking API on every shipped order. PayPal uses that tracking for [Seller Protection eligibility and earlier release of payment holds](https://developer.paypal.com/docs/tracking/tracking-api). Small merchants, who are the most likely to skip this step, get it without thinking about it.
+- **A reason to choose PayPal at checkout.** The guarantee is shown at checkout, frozen into the order, and paid back to the buyer's PayPal account with PayPal's own `note_to_payer`. The buyer sees PayPal keep the shop's promise.
+- **A merchant feature PayPal could offer natively.** Amazon-grade delivery promises usually need an ops team. Kept gives them to small shops, PayPal's core merchants, as a few sentences of plain English, with a monthly budget so exposure is always capped. It could ship as a "Promises" option on any PayPal checkout.
+- **Promises an AI shopping agent can read.** Each promise is a typed, machine-checkable rule, not marketing copy. In agentic commerce a buying agent can compare guarantees across shops and trust that PayPal will enforce them, which makes PayPal the settlement layer for agent-made promises.
+
+**PayPal APIs used:** Orders v2 (create and capture, with item and shipping breakdown), Orders v2 tracking (shipment attached to the capture), Payments v2 refunds (partial, idempotent `PayPal-Request-Id`, `note_to_payer`), and the JavaScript SDK Buttons for checkout.
+
 ## Trust by design
 - **The AI writes the rule; code enforces it.** The Kept agent never decides an amount.
 - **The AI's power over money is one-way.** The Kept agent can pause a payout for human review. It can never trigger, approve or enlarge one. `server/watcher.ts` evaluates the rule and computes the payout.
