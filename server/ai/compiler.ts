@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import { CompiledPromise, type Product } from "../types.ts";
-import { MODEL } from "./model.ts";
+import { logUsage, MODEL } from "./model.ts";
 import { usHolidays } from "../sources/context.ts";
 
 
@@ -151,7 +151,9 @@ export async function compilePromise(text: string, product: Product, merchantTim
   const req = {
     model: MODEL,
     max_tokens: 4000,
-    system: COMPILER_SYSTEM,
+    // ~4.9K tokens of fixed prompt + rule schema: cached, so repeat compiles (5 per "Suggest promises")
+    // pay 10% for it. Everything that varies (product, date, the promise) is in the user message.
+    system: [{ type: "text" as const, text: COMPILER_SYSTEM, cache_control: { type: "ephemeral" as const } }],
     messages: [{ role: "user" as const, content: userMessage(text, product, merchantTimezone, opts.today ?? new Date().toLocaleDateString("en-CA", { timeZone: merchantTimezone })) }],
     output_config: { format: betaZodOutputFormat(CompiledPromise4) },
   };
@@ -163,6 +165,7 @@ export async function compilePromise(text: string, product: Product, merchantTim
     throw new Error(`Promise compiler couldn't reach Claude: ${(err as Error).message}`);
   }
 
+  logUsage("compiler", res.usage);
   if (res.stop_reason === "refusal") {
     throw new Error("Claude declined to compile this promise. Try rewording it as a concrete guarantee (e.g. “Arrives by Friday or shipping's on us”).");
   }

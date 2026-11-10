@@ -3,7 +3,7 @@
 // The refund must never be blocked by the model: any failure falls back to a deterministic template.
 import Anthropic from "@anthropic-ai/sdk";
 import type { Order, Verdict } from "../types.ts";
-import { MODEL } from "./model.ts";
+import { logUsage, MODEL } from "./model.ts";
 
 const SHOP = "Harbor & Clay";
 const SIGNATURE = `— ${SHOP}`;
@@ -80,6 +80,7 @@ export async function writeRefundMessage(order: Order, productName: string, verd
       system: SYSTEM,
       messages: [{ role: "user", content: `Facts (JSON):\n${JSON.stringify(facts, null, 2)}\n\nWrite the note.` }],
     });
+    logUsage("narrator", res.usage);
     if (res.stop_reason === "refusal") throw new Error("refusal");
     const text = res.content
       .flatMap((b) => (b.type === "text" ? [b.text] : []))

@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import type { BreachAssessment, CarrierEvent, Order, Verdict } from "../types.ts";
-import { MODEL } from "./model.ts";
+import { logUsage, MODEL } from "./model.ts";
 
 const TIMEOUT_MS = 15_000;
 const MAX_REASON = 200;
@@ -74,6 +74,7 @@ export async function assessBreach(order: Order, productName: string, verdict: V
 
   try {
     const res = await getClient().beta.messages.parse(req);
+    logUsage("assessor", res.usage);
     if (res.stop_reason === "refusal") return fail("Claude declined to assess");
     const out = res.parsed_output;
     if (!out) return fail(`unparseable output (stop_reason ${res.stop_reason})`);

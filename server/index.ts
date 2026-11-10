@@ -104,7 +104,10 @@ app.post("/api/promises/suggest", async (c) => {
   const ideas = await suggestPromises(product, live?.status === "active" ? live.source_text : null, ctx, climate);
   // The agent drafts 5; every one is compiled and priced, and code keeps the best 3: checkable first,
   // then enforceable exactly as worded, then affordable but meaningful (pays out on 3–25% of orders).
-  const compiled = await Promise.allSettled(ideas.map((i) => compilePromise(i.promise_text, product, tz, { today: ctx.today })));
+  // The first compile writes the prompt cache; the rest start after it, so they read it at 10% of the price.
+  const compileIdea = (i: (typeof ideas)[number]) => compilePromise(i.promise_text, product, tz, { today: ctx.today });
+  const first = await Promise.allSettled(ideas.slice(0, 1).map(compileIdea));
+  const compiled = [...first, ...(await Promise.allSettled(ideas.slice(1).map(compileIdea)))];
   const scored = ideas.map((idea, i) => {
     const r = compiled[i];
     const value = r.status === "fulfilled" ? r.value : null;

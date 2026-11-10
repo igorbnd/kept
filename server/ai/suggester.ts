@@ -7,7 +7,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import * as z from "zod/v4";
 import type { ClimateSummary, MomentContext } from "../sources/context.ts";
 import type { Product } from "../types.ts";
-import { MODEL } from "./model.ts";
+import { logUsage, MODEL } from "./model.ts";
 
 
 export const FACTORS = ["product", "season", "holiday", "weekday", "time_of_day", "forecast", "history", "location"] as const;
@@ -106,6 +106,7 @@ export async function suggestPromises(product: Product, livePromise: string | nu
   } catch (err) {
     throw new Error(`Couldn't reach Claude for promise ideas: ${(err as Error).message}`);
   }
+  logUsage("suggester", res.usage);
   if (res.stop_reason === "refusal") throw new Error("Claude declined to suggest promises for this product.");
   if (!res.parsed_output) throw new Error("The idea generator returned output in the wrong shape. Please try again.");
   return res.parsed_output.ideas
