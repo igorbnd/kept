@@ -48,7 +48,7 @@ Kept makes a different split:
 
 ## Try it (judges)
 
-**Hosted demo:** _URL added after deploy_
+**Hosted demo:** https://kept-jhjl.onrender.com (free tier: the first load after a quiet spell can take ~1 minute while it wakes up)
 
 1. **Shop:** buy the *Tidepool Mug*. Either:
    - Click **"Judges: skip login — pay with PayPal sandbox test card"** (no account needed), or
