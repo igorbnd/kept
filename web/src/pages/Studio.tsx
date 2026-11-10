@@ -77,7 +77,7 @@ export function Studio() {
         <div>
           <div className="eyebrow">Merchant · Harbor &amp; Clay</div>
           <h1 className="display-sm">Promise Studio</h1>
-          <p className="lede">Write the guarantee the way you'd say it at the counter. The Kept agent turns it into a rule you can read, check and approve. Code enforces it from there.</p>
+          <p className="lede">Write the guarantee the way you'd say it at the counter. The Kept agent, powered by Claude, turns it into a rule you can read, check and approve. Code enforces it from there.</p>
         </div>
       </header>
 
@@ -142,7 +142,7 @@ export function Studio() {
               <div className="thinking-head">
                 <span className="claude-orb" />
                 <div>
-                  <strong>The Kept agent is reading your promise…</strong>
+                  <strong>The Kept agent (Claude) is reading your promise…</strong>
                   <div className="muted small thinking-step" key={thinkIdx}>
                     {THINKING[thinkIdx]}
                   </div>

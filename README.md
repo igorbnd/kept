@@ -29,8 +29,8 @@ Kept makes a different split:
 | **2. Approve** | The merchant approves the rule. It goes live as a badge on the product. |
 | **3. Buy** | The buyer pays with **PayPal Checkout** (Orders v2). The promise is frozen into the order, and the shipment's tracking number is attached to the PayPal capture (Orders v2 tracking). |
 | **4. Watch** | A deterministic watcher loop checks the evidence: carrier scans, or real hourly weather from Open-Meteo for the tour window. Every observation is written to an audit trail. |
-| **4½. Review** | When a delivery promise breaks, the Kept agent reads the carrier scans and decides *whose fault* the miss looks like. Ordinary delays, weather and lost parcels are the shop's risk, so the payout goes ahead. If the evidence points at the buyer ("Delivery attempted — no one available to sign", "address incomplete"), the Kept agent **pauses** the payout and the merchant decides. The agent can hold a payout. It can never create one, approve one or change the amount. If the model is unavailable, the default is to pay. |
-| **5. Keep** | When a promise breaks, code computes the payout and **PayPal Payments v2** issues a partial refund (idempotent, with `note_to_payer`). The Kept agent writes the buyer a short note citing the evidence. |
+| **4½. Review** | When a delivery promise breaks, the Kept agent (Claude) reads the carrier scans and decides *whose fault* the miss looks like. Ordinary delays, weather and lost parcels are the shop's risk, so the payout goes ahead. If the evidence points at the buyer ("Delivery attempted — no one available to sign", "address incomplete"), the Kept agent **pauses** the payout and the merchant decides. The agent can hold a payout. It can never create one, approve one or change the amount. If the model is unavailable, the default is to pay. |
+| **5. Keep** | When a promise breaks, code computes the payout and **PayPal Payments v2** issues a partial refund (idempotent, with `note_to_payer`). The Kept agent (Claude) writes the buyer a short note citing the evidence. |
 | **6. Account** | The merchant's **AG Grid ledger** shows every order, its latest evidence, the decision, the payout and the PayPal refund id, with live updates and a budget meter. |
 
 | Promise Studio | Ledger (AG Grid) |
@@ -57,7 +57,7 @@ Kept makes a different split:
 3. Open **Demo controls** (top right):
    - Under the order, click **Delayed (weather)**.
    - Then click **Jump to Saturday 00:01**.
-4. Within seconds the order page flips to **"$6.40 refunded to your PayPal"**, with the Kept agent's note and the real PayPal sandbox refund id.
+4. Within seconds the order page flips to **"$6.40 refunded to your PayPal"**, with the Kept agent's Claude-written note and the real PayPal sandbox refund id.
 5. Open **Ledger** to see it in AG Grid, plus the activity log (every observation, agent review and payout).
 6. Open **Promise Studio** and write your own promise. Try *"You'll love it or your money back"* to see a rejection.
 

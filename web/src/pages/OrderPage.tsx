@@ -227,7 +227,7 @@ function StatusCard({ data }: { data: OrderDetail }) {
             <Spinner size={12} /> Promise broken
           </div>
           <h1 className="status-title">Checking the carrier scans…</h1>
-          <p className="muted">The Kept agent is reading the tracking evidence. Carrier delays are the shop's risk and pay out automatically; anything that looks like the buyer's side goes to the shop for a quick look.</p>
+          <p className="muted">The Kept agent (Claude) is reading the tracking evidence. Carrier delays are the shop's risk and pay out automatically; anything that looks like the buyer's side goes to the shop for a quick look.</p>
         </section>
       );
     }
@@ -252,7 +252,7 @@ function StatusCard({ data }: { data: OrderDetail }) {
         <h1 className="status-title">Your refund is paused for a quick look</h1>
         <p className="status-lede">
           {scan ? <>The carrier reported: ‘{scan.description}’. </> : null}
-          Kept paused the automatic refund so Harbor &amp; Clay can take a look — the Kept agent flagged it as possibly not the shop's fault.
+          Kept paused the automatic refund so Harbor &amp; Clay can take a look — the Kept agent (Claude) flagged it as possibly not the shop's fault.
         </p>
         {order.review && <ReviewNote review={order.review} />}
         <p className="frozen">
@@ -357,7 +357,7 @@ function ReviewNote({ review }: { review: NonNullable<Order["review"]> }) {
     <div className="review-note">
       <div className="review-note-head">
         <span className="review-spark">✦</span>
-        <span>Kept agent's read of the evidence</span>
+        <span>Kept agent's read of the evidence · Claude</span>
         <span className={`review-tag attr-${review.attribution}`}>{ATTRIBUTION[review.attribution]}</span>
         <span className="review-conf">{review.confidence} confidence</span>
       </div>

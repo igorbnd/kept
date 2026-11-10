@@ -369,7 +369,7 @@ async function assessIfCarrier(order: Order, verdict: Verdict): Promise<boolean>
     logEvent("assessment", `The Kept agent's review was unavailable (${a.error}), so Kept is paying by default.`, order.id, data);
   } else {
     const then = a.hold ? "pausing the refund for the merchant" : "paying automatically";
-    logEvent("assessment", `Kept agent reviewed the evidence: ${ATTRIBUTION_LABEL[a.attribution]} → ${then}. ${a.reason}`, order.id, data);
+    logEvent("assessment", `Kept agent (Claude) reviewed the evidence: ${ATTRIBUTION_LABEL[a.attribution]} → ${then}. ${a.reason}`, order.id, data);
   }
   if (!a.hold) {
     orders.update(order.id, { review });
