@@ -130,6 +130,8 @@ export const STATUS_META: Record<OrderStatus, { label: string; tone: string }> =
   breached: { label: "Refunding", tone: "amber" },
   refunded: { label: "Refunded", tone: "green-strong" },
   failed: { label: "Needs review", tone: "red" },
+  held: { label: "Held", tone: "amber" },
+  declined: { label: "Declined", tone: "muted" },
 };
 
 // ---------- toasts ----------

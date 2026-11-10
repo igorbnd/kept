@@ -13,7 +13,7 @@ import { seedProducts, seedPromises } from "./seed.ts";
 import { CARRIER_NAME, createShipment, getCarrierEvents, pushCarrierEvent } from "./sources/carrier.ts";
 import { clearWeatherOverrides, setWeatherOverride } from "./sources/weather.ts";
 import type { Order } from "./types.ts";
-import { computeDeadline, startWatcher, tick } from "./watcher.ts";
+import { computeDeadline, computePayout, decideHeld, ReviewError, startWatcher, tick } from "./watcher.ts";
 
 const app = new Hono();
 
@@ -37,6 +37,7 @@ app.use("/api/*", (c, next) => (c.req.method === "GET" ? next() : writeLimit(c, 
 app.post("/api/promises/compile", rateLimit("compile", 10, TEN_MIN, "promise compiles", 60));
 app.post("/api/orders", rateLimit("orders", 30, TEN_MIN, "orders", 150));
 app.post("/api/orders/:id/capture", rateLimit("capture", 40, TEN_MIN, "payment captures", 200));
+app.post("/api/orders/:id/review", rateLimit("review", 30, TEN_MIN, "merchant decisions", 150));
 app.post("/api/demo/reset", rateLimit("reset", 3, TEN_MIN, "demo resets"));
 app.post("/api/demo/sample", rateLimit("sample", 3, TEN_MIN, "sample-history loads", 12));
 app.post("/api/demo/*", rateLimit("demo", 120, TEN_MIN, "demo actions"));
@@ -186,6 +187,18 @@ app.post("/api/orders", async (c) => {
 
 app.post("/api/orders/:id/capture", async (c) => c.json(await captureById(c.req.param("id"))));
 
+// Merchant decision on a payout Claude paused. Claude can only pause; the merchant decides, and a
+// "refund" runs the exact same payout code path as an automatic refund.
+app.post("/api/orders/:id/review", async (c) => {
+  const { decision } = z.object({ decision: z.enum(["refund", "decline"]) }).parse(await c.req.json());
+  try {
+    return c.json(await decideHeld(c.req.param("id"), decision));
+  } catch (e) {
+    if (e instanceof ReviewError) return c.json({ error: e.message }, e.status);
+    throw e;
+  }
+});
+
 // ---------- Ledger ----------
 
 app.get("/api/orders", (c) => {
@@ -203,6 +216,8 @@ app.get("/api/orders/:id", (c) => {
     product: products.get(order.product_id),
     carrier_events: order.tracking_number ? getCarrierEvents(order.tracking_number) : [],
     agent_events: agentEvents.all().filter((e) => e.order_id === order.id),
+    // What a merchant "Refund" would send on a held order: computed by code from the frozen rule.
+    pending_payout: order.status === "held" && order.promise_snapshot?.rule ? computePayout(order.promise_snapshot.rule, order) : null,
   });
 });
 
@@ -218,6 +233,8 @@ app.get("/api/stats", (c) => {
     watching: all.filter((o) => o.status === "paid").length,
     kept: all.filter((o) => o.status === "kept").length,
     refunded: all.filter((o) => o.status === "refunded").length,
+    held: all.filter((o) => o.status === "held").length,
+    declined: all.filter((o) => o.status === "declined").length,
     paid_out: +all.reduce((s, o) => s + (o.payout_amount ?? 0), 0).toFixed(2),
     budget: MERCHANT.monthly_guarantee_budget,
     budget_used: +refundedThisMonth.toFixed(2),
@@ -237,7 +254,7 @@ app.post("/api/demo/clock", async (c) => {
 
 app.post("/api/demo/carrier/:tracking", async (c) => {
   const body = z
-    .object({ status: z.enum(["picked_up", "in_transit", "delayed", "out_for_delivery", "delivered"]), description: z.string().min(1).max(120), location: z.string().min(1).max(80) })
+    .object({ status: z.enum(["picked_up", "in_transit", "delayed", "exception", "out_for_delivery", "delivered"]), description: z.string().min(1).max(120), location: z.string().min(1).max(80) })
     .parse(await c.req.json());
   const tracking = c.req.param("tracking");
   if (!orders.all().some((o) => o.tracking_number === tracking)) return c.json({ error: "No order has that tracking number." }, 404);

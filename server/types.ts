@@ -90,7 +90,27 @@ export type OrderStatus =
   | "kept" // promise fulfilled, no payout needed (final)
   | "breached" // breach detected, refund in flight
   | "refunded" // payout sent (final)
-  | "failed"; // refund attempt failed — needs a human
+  | "failed" // refund attempt failed — needs a human
+  | "held" // breach found, but Claude flagged the miss as possibly buyer-caused: payout paused for the merchant
+  | "declined"; // merchant reviewed a held payout and declined it (final)
+
+// Claude's read of a broken carrier promise. Claude may only PAUSE a payout for the merchant;
+// it can never create one, change an amount, or approve anything. Code still computes every dollar.
+export type Attribution = "seller_side" | "buyer_caused" | "unclear";
+export type BreachAssessment = {
+  attribution: Attribution;
+  hold: boolean; // always attribution !== "seller_side" (enforced in code)
+  reason: string; // <= 200 chars, plain English, cites the scan
+  confidence: "low" | "medium" | "high";
+};
+export type OrderReview = {
+  attribution: Attribution;
+  reason: string;
+  confidence: BreachAssessment["confidence"];
+  assessed_at: string;
+  decision: "refund" | "decline" | null; // merchant's call on a held payout (null when not held / undecided)
+  decided_at: string | null;
+};
 
 export type Order = {
   id: string;
@@ -113,12 +133,13 @@ export type Order = {
   customer_message: string | null; // Claude-written note shown to buyer / sent as note_to_payer
   created_at: string;
   resolved_at: string | null;
+  review?: OrderReview | null; // Claude's assessment of a carrier breach (absent on older rows)
 };
 
 export type CarrierEvent = {
   id: string;
   tracking_number: string;
-  status: "label_created" | "picked_up" | "in_transit" | "delayed" | "out_for_delivery" | "delivered";
+  status: "label_created" | "picked_up" | "in_transit" | "delayed" | "exception" | "out_for_delivery" | "delivered"; // exception = attempted / returned / held; not delivered
   description: string;
   location: string;
   at: string; // ISO (simulated clock)
@@ -128,7 +149,7 @@ export type CarrierEvent = {
 export type AgentEvent = {
   id: string;
   order_id: string | null;
-  kind: "compiled" | "watching" | "evidence" | "kept" | "breach" | "refund" | "error" | "info";
+  kind: "compiled" | "watching" | "evidence" | "kept" | "breach" | "refund" | "error" | "info" | "assessment" | "hold";
   message: string;
   data: unknown;
   at: string;

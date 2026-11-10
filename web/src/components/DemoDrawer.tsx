@@ -4,10 +4,11 @@ import { announceWorldChanged, fmtDateTime, nextSaturdayMorning, useClock, usePo
 import { LOCATIONS } from "../pages/Shop.tsx";
 import { Spinner, StatusPill } from "./ui.tsx";
 
-type CarrierStatus = "picked_up" | "delayed" | "out_for_delivery" | "delivered";
+type CarrierStatus = "picked_up" | "delayed" | "exception" | "out_for_delivery" | "delivered";
 const CARRIER_ACTIONS: { status: CarrierStatus; label: string; description: string; location: string }[] = [
   { status: "picked_up", label: "Picked up", description: "Picked up by carrier", location: "Portland, ME" },
   { status: "delayed", label: "Delayed (weather)", description: "Delayed: severe weather at regional hub", location: "Hartford, CT" },
+  { status: "exception", label: "Attempted — no one home", description: "Delivery attempted — no one available to sign", location: "Portland, ME" },
   { status: "out_for_delivery", label: "Out for delivery", description: "Out for delivery", location: "Local delivery station" },
   { status: "delivered", label: "Delivered", description: "Delivered, left at front door", location: "Front porch" },
 ];
@@ -112,7 +113,7 @@ export function DemoDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                     {CARRIER_ACTIONS.map((a) => (
                       <button
                         key={a.status}
-                        className={`btn btn-xs ${a.status === "delayed" ? "btn-warn" : a.status === "delivered" ? "btn-ok" : ""}`}
+                        className={`btn btn-xs ${a.status === "delayed" || a.status === "exception" ? "btn-warn" : a.status === "delivered" ? "btn-ok" : ""}`}
                         disabled={!!busy}
                         onClick={() =>
                           run(`${o.id}:${a.status}`, () => post(`/api/demo/carrier/${encodeURIComponent(o.tracking_number!)}`, { status: a.status, description: a.description, location: a.location }), `${a.label} · ${o.tracking_number}`)

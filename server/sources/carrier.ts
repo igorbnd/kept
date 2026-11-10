@@ -23,6 +23,7 @@ export function createShipment(orderId: string): string {
   return tracking;
 }
 
+// status "exception" covers attempted / returned / held-at-depot scans. It never counts as delivered.
 export function pushCarrierEvent(trackingNumber: string, status: CarrierEvent["status"], description: string, location: string): CarrierEvent {
   return carrierEvents.put({ id: newId("cev"), tracking_number: trackingNumber, status, description, location, at: now().toISOString() });
 }

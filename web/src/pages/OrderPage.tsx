@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type AgentEvent, type CarrierEvent, type OrderDetail } from "../api.ts";
-import { countdown, fmtDateTime, fmtEventDate, money, ruleChips, SOURCE_LABEL, useClock, usePoll, useServerNow } from "../lib.tsx";
+import { api, post, type AgentEvent, type CarrierEvent, type Order, type OrderDetail } from "../api.ts";
+import { announceWorldChanged, countdown, fmtDateTime, fmtEventDate, money, ruleChips, SOURCE_LABEL, useClock, usePoll, useServerNow, useToast } from "../lib.tsx";
 import { Empty, ErrorNote, PromisePill, ShieldCheck, Skeleton, Spinner } from "../components/ui.tsx";
 
 export function OrderPage({ id }: { id: string }) {
-  const { data, error, loading } = usePoll((signal) => api<OrderDetail>(`/api/orders/${id}`, { signal }), 2000, [id]);
+  const { data, error, loading, reload } = usePoll((signal) => api<OrderDetail>(`/api/orders/${id}`, { signal }), 2000, [id]);
 
   if (loading && !data) return <OrderSkeleton />;
   if (!data)
@@ -27,6 +27,7 @@ export function OrderPage({ id }: { id: string }) {
       <div className="order-grid">
         <div className="order-main">
           <StatusCard data={data} />
+          {order.status === "held" && <MerchantPanel data={data} onDone={reload} />}
           <section className="card order-summary">
             <div className="order-summary-head">
               <span className="order-emoji">{product?.image ?? "📦"}</span>
@@ -228,6 +229,41 @@ function StatusCard({ data }: { data: OrderDetail }) {
     );
   }
 
+  if (order.status === "held") {
+    const scan = lastExceptionScan(data);
+    return (
+      <section className="card status-card status-held">
+        <div className="status-eyebrow tone-amber">
+          <PauseGlyph /> Under review
+        </div>
+        <h1 className="status-title">Your refund is paused for a quick look</h1>
+        <p className="status-lede">
+          {scan ? <>The carrier reported: ‘{scan.description}’. </> : null}
+          Kept paused the automatic refund so Harbor &amp; Clay can take a look — Claude flagged it as possibly not the shop's fault.
+        </p>
+        {order.review && <ReviewNote review={order.review} />}
+        <p className="frozen">
+          <ShieldCheck size={12} /> Claude can pause a payout, never create one. The amount is fixed by the promise you bought.
+        </p>
+      </section>
+    );
+  }
+
+  if (order.status === "declined") {
+    const scan = lastExceptionScan(data);
+    return (
+      <section className="card status-card status-declined">
+        <div className="status-eyebrow tone-muted">Closed · reviewed by the shop</div>
+        <h1 className="status-title">No refund on this one</h1>
+        <p className="status-lede">
+          {scan ? <>The carrier reported: ‘{scan.description}’. </> : null}
+          Harbor &amp; Clay reviewed it{order.review?.decided_at ? ` on ${fmtDateTime(order.review.decided_at)}` : ""} and decided the missed promise wasn't on their side, so no payout was sent. The full evidence trail is in the timeline.
+        </p>
+        {order.review && <ReviewNote review={order.review} />}
+      </section>
+    );
+  }
+
   if (order.status === "failed") {
     return (
       <section className="card status-card status-failed">
@@ -283,6 +319,79 @@ function StatusCard({ data }: { data: OrderDetail }) {
   );
 }
 
+const ATTRIBUTION: Record<NonNullable<Order["review"]>["attribution"], string> = {
+  seller_side: "Carrier or shop-side miss",
+  buyer_caused: "Possibly buyer-caused",
+  unclear: "Cause unclear",
+};
+
+function lastExceptionScan(data: OrderDetail): CarrierEvent | undefined {
+  const ev = data.carrier_events;
+  return [...ev].reverse().find((e) => e.status === "exception") ?? ev[ev.length - 1];
+}
+
+function PauseGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+      <rect x="2" y="1.5" width="2.8" height="9" rx="1" fill="currentColor" />
+      <rect x="7.2" y="1.5" width="2.8" height="9" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ReviewNote({ review }: { review: NonNullable<Order["review"]> }) {
+  return (
+    <div className="review-note">
+      <div className="review-note-head">
+        <span className="review-spark">✦</span>
+        <span>Claude's read of the evidence</span>
+        <span className={`review-tag attr-${review.attribution}`}>{ATTRIBUTION[review.attribution]}</span>
+        <span className="review-conf">{review.confidence} confidence</span>
+      </div>
+      <p>{review.reason}</p>
+    </div>
+  );
+}
+
+function MerchantPanel({ data, onDone }: { data: OrderDetail; onDone: () => void }) {
+  const { order } = data;
+  const toast = useToast();
+  const [busy, setBusy] = useState<"refund" | "decline" | null>(null);
+  const amount = data.pending_payout ?? null;
+  async function decide(decision: "refund" | "decline") {
+    setBusy(decision);
+    try {
+      const o = await post<Order>(`/api/orders/${order.id}/review`, { decision });
+      toast(decision === "refund" ? (o.status === "refunded" ? `Refunded ${money(o.payout_amount)} through PayPal` : "Refund sent for processing") : "Payout declined", decision === "refund" ? "success" : "info");
+      announceWorldChanged();
+      onDone();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <section className="card merchant-panel">
+      <div className="merchant-panel-head">
+        <span className="demo-tag">Merchant view (demo)</span>
+        <h3 className="serif">Merchant decision</h3>
+      </div>
+      <p className="muted small">
+        Kept found the promise broken, and Claude paused the payout because the scans point at the buyer's side. You decide. The amount was set by code from the frozen promise; neither you nor Claude can change it here.
+      </p>
+      <div className="btn-row">
+        <button className="btn btn-primary" disabled={!!busy} onClick={() => decide("refund")}>
+          {busy === "refund" ? <Spinner size={12} /> : null} Refund {amount != null ? money(amount) : ""}
+        </button>
+        <button className="btn" disabled={!!busy} onClick={() => decide("decline")}>
+          {busy === "decline" ? <Spinner size={12} /> : null} Decline
+        </button>
+      </div>
+    </section>
+  );
+}
+
 type TItem = { key: string; at: string; icon: string; tone: string; title: string; detail?: string; future?: boolean };
 
 const AGENT_ICON: Record<AgentEvent["kind"], { icon: string; tone: string }> = {
@@ -294,15 +403,27 @@ const AGENT_ICON: Record<AgentEvent["kind"], { icon: string; tone: string }> = {
   refund: { icon: "$", tone: "green" },
   error: { icon: "×", tone: "red" },
   info: { icon: "i", tone: "muted" },
+  assessment: { icon: "✦", tone: "teal" },
+  hold: { icon: "‖", tone: "amber" },
 };
 const CARRIER_LABEL: Record<CarrierEvent["status"], string> = {
   label_created: "Label created",
   picked_up: "Picked up",
   in_transit: "In transit",
   delayed: "Delayed",
+  exception: "Delivery exception",
   out_for_delivery: "Out for delivery",
   delivered: "Delivered",
 };
+
+function agentDetail(e: AgentEvent): string {
+  if (e.kind === "assessment") {
+    const conf = (e.data as { confidence?: string; error?: string | null } | null) ?? {};
+    return conf.error ? "Claude review · unavailable, paid by default" : `Claude review · ${conf.confidence ?? "?"} confidence · can pause, never pay`;
+  }
+  if (e.kind === "hold") return "Kept agent · held for merchant";
+  return `Kept agent · ${e.kind}`;
+}
 
 function Timeline({ data }: { data: OrderDetail }) {
   const { order, carrier_events, agent_events } = data;
@@ -314,12 +435,12 @@ function Timeline({ data }: { data: OrderDetail }) {
     ...carrier_events.map((e) => ({
       key: e.id,
       at: e.at,
-      icon: e.status === "delivered" ? "✓" : e.status === "delayed" ? "!" : "▸",
-      tone: e.status === "delivered" ? "green" : e.status === "delayed" ? "amber" : "ink",
+      icon: e.status === "delivered" ? "✓" : e.status === "delayed" || e.status === "exception" ? "!" : "▸",
+      tone: e.status === "delivered" ? "green" : e.status === "delayed" || e.status === "exception" ? "amber" : "ink",
       title: `Carrier: ${CARRIER_LABEL[e.status]}`,
       detail: [e.description, e.location].filter(Boolean).join(" · "),
     })),
-    ...agent_events.map((e) => ({ key: e.id, at: e.at, ...AGENT_ICON[e.kind], title: e.message, detail: `Kept agent · ${e.kind}` })),
+    ...agent_events.map((e) => ({ key: e.id, at: e.at, ...(AGENT_ICON[e.kind] ?? AGENT_ICON.info), title: e.message, detail: agentDetail(e) })),
   ];
   if (order.deadline_at && (order.status === "paid" || order.status === "created")) {
     const left = countdown(new Date(order.deadline_at).getTime() - now.getTime());

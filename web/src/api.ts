@@ -19,13 +19,15 @@ export type Config = {
 
 export type ProductWithPromise = Product & { promise: PromiseRecord | null };
 export type OrderRow = Order & { product_name: string };
-export type OrderDetail = { order: Order; product: Product | undefined; carrier_events: CarrierEvent[]; agent_events: AgentEvent[] };
+export type OrderDetail = { order: Order; product: Product | undefined; carrier_events: CarrierEvent[]; agent_events: AgentEvent[]; pending_payout?: number | null };
 export type Stats = {
   orders: number;
   revenue: number;
   watching: number;
   kept: number;
   refunded: number;
+  held: number;
+  declined: number;
   paid_out: number;
   budget: number;
   budget_used: number;

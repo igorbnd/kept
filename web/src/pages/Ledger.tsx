@@ -37,13 +37,15 @@ const BUCKETS: { key: Bucket; label: string }[] = [
   { key: "all", label: "All orders" },
   { key: "paid", label: "Watching" },
   { key: "kept", label: "Kept" },
+  { key: "held", label: "Held" },
   { key: "breached", label: "Refunding" },
   { key: "refunded", label: "Refunded" },
-  { key: "failed", label: "Review" },
+  { key: "declined", label: "Declined" },
+  { key: "failed", label: "Needs a human" },
   { key: "created", label: "Unpaid" },
 ];
 
-const EVIDENCE_KINDS: AgentEvent["kind"][] = ["evidence", "kept", "breach", "refund", "error", "watching"];
+const EVIDENCE_KINDS: AgentEvent["kind"][] = ["evidence", "kept", "breach", "refund", "error", "watching", "assessment", "hold"];
 
 function StatusCell(p: ICellRendererParams<Row>) {
   return p.data && !p.node.rowPinned ? <StatusPill status={p.data.status} /> : null;
@@ -113,7 +115,7 @@ export function Ledger() {
   const rows: Row[] = useMemo(() => {
     const latest = new Map<string, AgentEvent>();
     // /api/events is newest-first
-    for (const e of events.data ?? []) if (e.order_id && EVIDENCE_KINDS.includes(e.kind) && !latest.has(e.order_id)) latest.set(e.order_id, e);
+    for (const e of events.data ?? []) if (e.order_id && (EVIDENCE_KINDS.includes(e.kind) || (e.kind === "info" && e.message.startsWith("Merchant "))) && !latest.has(e.order_id)) latest.set(e.order_id, e);
     return (orders.data ?? []).map((o) => {
       const ev = latest.get(o.id);
       return { ...o, evidence: ev?.message ?? null, evidence_kind: ev?.kind ?? null };
@@ -193,7 +195,7 @@ export function Ledger() {
 
   const defaultColDef = useMemo<ColDef<Row>>(() => ({ sortable: true, resizable: true, enableCellChangeFlash: true, suppressHeaderMenuButton: false }), []);
   const getRowId = useCallback((p: GetRowIdParams<Row>) => p.data.id, []);
-  const getRowClass = useCallback((p: RowClassParams<Row>) => (p.data?.status === "refunded" ? "row-refunded" : p.data?.status === "breached" ? "row-breached" : undefined), []);
+  const getRowClass = useCallback((p: RowClassParams<Row>) => (p.data?.status === "refunded" ? "row-refunded" : p.data?.status === "breached" || p.data?.status === "held" ? "row-breached" : undefined), []);
 
   return (
     <div className="page ledger">
@@ -206,6 +208,7 @@ export function Ledger() {
       </header>
 
       <StatsStrip stats={stats.data} loading={stats.loading && !stats.data} />
+      <ReviewCallout rows={rows} />
 
       <div className="ledger-grid">
         <aside className="card status-rail">
@@ -268,7 +271,7 @@ export function Ledger() {
   );
 }
 
-const ORDER: OrderStatus[] = ["breached", "failed", "paid", "refunded", "kept", "created"];
+const ORDER: OrderStatus[] = ["held", "breached", "failed", "paid", "refunded", "declined", "kept", "created"];
 
 function StatsStrip({ stats, loading }: { stats: Stats | null; loading: boolean }) {
   const pct = stats && stats.budget > 0 ? Math.min(100, (stats.budget_used / stats.budget) * 100) : 0;
@@ -322,7 +325,30 @@ const FEED_ICON: Record<AgentEvent["kind"], string> = {
   refund: "$",
   error: "✕",
   info: "·",
+  assessment: "✦",
+  hold: "‖",
 };
+
+function ReviewCallout({ rows }: { rows: Row[] }) {
+  const held = rows.filter((r) => r.status === "held");
+  if (!held.length) return null;
+  // rows are newest-first; the oldest held order has waited longest
+  const first = held[held.length - 1];
+  return (
+    <a className="review-callout" href={`#/order/${first.id}`}>
+      <span className="review-callout-icon" aria-hidden="true">‖</span>
+      <span className="review-callout-text">
+        <strong>
+          {held.length === 1 ? "1 payout needs your review" : `${held.length} payouts need your review`}
+        </strong>
+        <span>
+          Claude paused {held.length === 1 ? "it" : "them"} because the carrier scans point at the buyer's side ({first.product_name}, {first.buyer_name ?? "buyer"}). Claude can pause a payout, never create one.
+        </span>
+      </span>
+      <span className="review-callout-go">Review →</span>
+    </a>
+  );
+}
 
 function ActivityFeed({ events, loading }: { events: AgentEvent[] | null; loading: boolean }) {
   const now = useServerNow(5000);

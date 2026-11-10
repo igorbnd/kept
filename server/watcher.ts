@@ -2,13 +2,14 @@
 // Deterministic: code evaluates rules and computes payouts; Claude only writes the message.
 // Every decision is logged to agent_events with its evidence. Refunds are idempotent
 // (PayPal-Request-Id = order id) and a module-level lock prevents overlapping ticks.
+import { assessBreach } from "./ai/assessor.ts";
 import { writeRefundMessage } from "./ai/narrator.ts";
 import { agentEvents, logEvent, now, orders, products } from "./db.ts";
 import { MERCHANT } from "./merchant.ts";
 import { refundCapture } from "./paypal.ts";
 import { getCarrierEvents } from "./sources/carrier.ts";
 import { getWeather } from "./sources/weather.ts";
-import type { CarrierEvent, Condition, Deadline, Evidence, Order, PromiseRule, Verdict } from "./types.ts";
+import type { CarrierEvent, Condition, Deadline, Evidence, Order, OrderReview, PromiseRule, Verdict } from "./types.ts";
 
 // ---------- Timezone math (Intl only, no deps) ----------
 
@@ -343,11 +344,95 @@ function lastEvidenceByOrder(): Map<string, string> {
 }
 const lastErrorByOrder = new Map<string, string>();
 
+const ATTRIBUTION_LABEL: Record<OrderReview["attribution"], string> = {
+  seller_side: "carrier/shop-side miss",
+  buyer_caused: "possibly buyer-caused",
+  unclear: "cause unclear",
+};
+
+/**
+ * For carrier promises, ask Claude whether the buyer plausibly caused the miss. Stores the review on
+ * the order BEFORE any refund, so a crash/retry reuses it instead of asking again. Returns true if
+ * the payout is now held for the merchant. Claude can only pause a payout here, never create one.
+ */
+async function assessIfCarrier(order: Order, verdict: Verdict): Promise<boolean> {
+  const kind = order.promise_snapshot?.rule?.condition.kind;
+  if (kind !== "delivered_by" && kind !== "shipped_by") return false; // weather is measured data: no buyer fault possible
+  if (order.review) return false; // already assessed (and not held, or we wouldn't be here)
+  const productName = products.get(order.product_id)?.name ?? "the order";
+  const events = order.tracking_number ? getCarrierEvents(order.tracking_number) : [];
+  const a = await assessBreach(order, productName, verdict, events);
+  if (!orders.get(order.id)) return true; // cleared by a demo reset while we waited
+  const review: OrderReview = { attribution: a.attribution, reason: a.reason, confidence: a.confidence, assessed_at: now().toISOString(), decision: null, decided_at: null };
+  const data = { ...review, hold: a.hold, latency_ms: a.latency_ms, error: a.error ?? null };
+  if (a.error) {
+    logEvent("assessment", `Claude's review was unavailable (${a.error}), so Kept is paying by default.`, order.id, data);
+  } else {
+    const then = a.hold ? "pausing the refund for the merchant" : "paying automatically";
+    logEvent("assessment", `Claude reviewed the evidence: ${ATTRIBUTION_LABEL[a.attribution]} → ${then}. ${a.reason}`, order.id, data);
+  }
+  if (!a.hold) {
+    orders.update(order.id, { review });
+    return false;
+  }
+  orders.update(order.id, { status: "held", review });
+  logEvent("hold", `Refund paused for ${MERCHANT.name} to review. Claude can pause a payout, never create one.`, order.id, data);
+  return true;
+}
+
+// Orders whose payout is running outside the tick (a merchant approving a held refund). The tick
+// skips them so the same order is never paid out by two callers at once.
+const payingOutsideTick = new Set<string>();
+
+/**
+ * The single refund path, shared by the watcher and the merchant's "Refund" decision on a held order:
+ * computePayout, budget check, narrator note, PayPal refund with the same idempotency key (order id).
+ */
+export async function payOutOrder(orderId: string): Promise<Order | null> {
+  const order = orders.get(orderId);
+  if (!order) return null;
+  const verdict = await evaluate(order);
+  await payOut(order, verdict);
+  return orders.get(orderId);
+}
+
+export class ReviewError extends Error {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
+    super(message);
+  }
+}
+
+/** Merchant decision on a held payout. Only valid while the order is `held`. */
+export async function decideHeld(orderId: string, decision: "refund" | "decline"): Promise<Order> {
+  const order = orders.get(orderId);
+  if (!order) throw new ReviewError("not found", 404);
+  if (order.status !== "held" || !order.review) throw new ReviewError(`Only held orders can be reviewed (this one is ${order.status}).`, 409);
+  const t = now().toISOString();
+  const review: OrderReview = { ...order.review, decision, decided_at: t };
+  if (decision === "decline") {
+    const updated = orders.update(orderId, { status: "declined", review, resolved_at: t });
+    logEvent("info", `Merchant declined payout: reviewed Claude's flag (“${order.review.reason}”) and kept the charge.`, orderId, { review });
+    return updated;
+  }
+  // Flip to "breached" synchronously (no await in between), so a double click sees a non-held order.
+  // If the process dies mid-refund, the tick's recovery path resumes it with the stored review.
+  orders.update(orderId, { status: "breached", review });
+  logEvent("info", `Merchant approved the refund after reviewing Claude's flag.`, orderId, { review });
+  payingOutsideTick.add(orderId);
+  try {
+    return (await payOutOrder(orderId)) ?? orders.get(orderId)!;
+  } finally {
+    payingOutsideTick.delete(orderId);
+  }
+}
+
 async function processOrder(order: Order, lastEvidence: Map<string, string>): Promise<void> {
   // Resume a refund that was in flight when the process stopped (same idempotency key, safe to retry).
+  // An order that was already assessed keeps its stored review; it is never re-assessed.
   if (order.status === "breached") {
     const verdict = await evaluate(order);
-    return payOut(order, verdict);
+    if (await assessIfCarrier(order, verdict)) return;
+    return payOut(orders.get(order.id) ?? order, verdict);
   }
 
   const rule = order.promise_snapshot?.rule;
@@ -375,12 +460,14 @@ async function processOrder(order: Order, lastEvidence: Map<string, string>): Pr
   }
   const breached = orders.update(order.id, { status: "breached" });
   logEvent("breach", `Promise broken: ${verdict.evidence.summary}`, order.id, verdict.evidence);
-  await payOut(breached, verdict);
+  if (await assessIfCarrier(breached, verdict)) return; // held for the merchant: no refund, not counted toward the budget
+  await payOut(orders.get(order.id) ?? breached, verdict);
 }
 
 async function runTick(): Promise<void> {
   const lastEvidence = lastEvidenceByOrder();
-  const todo = orders.all().filter((o) => o.status === "paid" || (o.status === "breached" && !o.resolved_at));
+  // Held orders wait for the merchant and are never re-evaluated here.
+  const todo = orders.all().filter((o) => (o.status === "paid" || (o.status === "breached" && !o.resolved_at)) && !payingOutsideTick.has(o.id));
   for (const order of todo) {
     if (!orders.get(order.id)) continue; // cleared by a demo reset mid-tick
     try {
