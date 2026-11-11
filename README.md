@@ -12,6 +12,8 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), 202
 ## The problem
 Guarantees are the cheapest trust signal a small shop has, and the hardest to keep. A two-person studio can write "arrives by Friday or shipping's on us", but then someone has to check every parcel, notice every miss, and process every refund. In practice the buyer has to notice, complain and argue. Most never do, so the promise quietly turns into marketing.
 
+The other half of the problem is refund abuse. A generous guarantee invites "it never came" or "it was late" claims that a small or mid-sized merchant can't verify and can't afford to fight, so many shops don't promise anything at all. Kept refunds on evidence, never on a claim, with limits the merchant sets up front.
+
 
 ## How Kept differs from what exists
 Pieces of this already exist. Weather guarantees that pay out automatically ([Sensible Weather](https://www.sensibleweather.com/), [WeatherPromise](https://purchase.weatherpromise.com/us/en/)) are fixed products sold by an insurer. Merchant-run shipping guarantees ([ShipAid](https://www.shipaid.com/)) still rely on the buyer filing a claim. AI support agents (for example [Yuma](https://yuma.ai/ai-support-agent)) can resolve late orders proactively, but a model decides each case. LLM "intelligent contracts" ([GenLayer](https://docs.genlayer.com/understand-genlayer-protocol/typical-use-cases)) also have a model judge each claim. Delivery-date tools ([Narvar Promise](https://corp.narvar.com/promise), [LateShipment Promise](https://apps.shopify.com/estimated-delivery-date-1), [Shopify Shop Promise](https://www.shopify.com/shop-promise)) already factor in holidays and weather, but to *estimate* a date, not to back it with a payout.
@@ -41,20 +43,22 @@ Kept makes a different split:
 
 | Promise Studio | Ledger (AG Grid) |
 |---|---|
-| ![Studio](docs/screenshots/studio-reject.png) | ![Ledger](docs/screenshots/ledger.png) |
+| ![Studio](docs/screenshots/studio-reject.png) | ![Ledger](docs/screenshots/held-ledger.png) |
 
 ## Why it matters for PayPal
-Kept is built on PayPal from end to end: the purchase, the shipment and the payout all run against the same PayPal capture. That gives PayPal and its merchants five things.
+Kept is built on PayPal from end to end: the purchase, the shipment and the payout all run against the same PayPal capture. That gives PayPal and its merchants six things.
 
 - **Disputes settled before they're opened.** A late parcel is exactly what turns into an *Item Not Received* dispute. Kept refunds the agreed amount, with a note citing the scan, before the buyer would think to complain. A buyer who already has their money and an explanation has little reason to open a dispute. That saves the merchant a fight, the buyer a wait, and PayPal a case to review.
+- **Guarantees that can't be gamed.** A refund is triggered by evidence, never by a buyer's claim, so there's no "it was late" to argue about and nothing to fake. The merchant sets the condition, the amount and a monthly cap up front, and when the scans point at the buyer ("no one available to sign") the refund is paused for the merchant to decide. Small and mid-sized merchants can offer a generous promise without opening themselves to refund abuse, and PayPal sees fewer contested refunds.
 - **Tracking on every order, automatically.** Kept attaches the tracking number to the capture through the Orders v2 tracking API on every shipped order. PayPal uses valid tracking when it [assesses Seller Protection and when it can release held payments sooner](https://developer.paypal.com/docs/tracking/tracking-api), subject to PayPal's own eligibility rules. Small merchants, who are the most likely to skip this step, get it without thinking about it.
 - **A reason to choose PayPal at checkout.** The guarantee is shown at checkout, frozen into the order, and paid back to the buyer's PayPal account with PayPal's own `note_to_payer`. The buyer sees PayPal keep the shop's promise.
-- **A merchant feature PayPal could offer natively.** Amazon-grade delivery promises usually need an ops team. Kept gives them to small shops, PayPal's core merchants, as a few sentences of plain English, with a monthly budget so exposure is always capped. It could ship as a "Promises" option on any PayPal checkout.
+- **A merchant feature PayPal could offer natively.** Amazon-grade delivery promises usually need an ops team. Kept gives them to small and mid-sized merchants, PayPal's core merchants, as a few sentences of plain English, with a monthly budget so exposure is always capped. It could ship as a "Promises" option on any PayPal checkout.
 - **Promises an AI shopping agent can read.** Each promise is a typed, machine-checkable rule, not marketing copy. In agentic commerce a buying agent can compare guarantees across shops and trust that PayPal will enforce them, which makes PayPal the settlement layer for agent-made promises.
 
 **PayPal APIs used:** Orders v2 (create and capture, with item and shipping breakdown), Orders v2 tracking (shipment attached to the capture), Payments v2 refunds (partial, idempotent `PayPal-Request-Id`, `note_to_payer`), and the JavaScript SDK Buttons for checkout.
 
 ## Trust by design
+- **Refunds follow evidence, never a claim.** The buyer never has to ask, and can't talk a refund out of the system.
 - **The AI writes the rule; code enforces it.** The Kept agent never decides an amount.
 - **The AI's power over money is one-way.** The Kept agent can pause a payout for human review. It can never trigger, approve or enlarge one. `server/watcher.ts` evaluates the rule and computes the payout.
 - **Payouts are capped** at the captured amount and at the merchant's monthly guarantee budget. Over budget, the watcher stops and asks a human.
