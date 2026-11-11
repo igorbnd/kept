@@ -93,7 +93,7 @@ npm install
 cp .env.example .env     # fill in PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ANTHROPIC_API_KEY
 npm run dev              # API on :8787, web on http://localhost:5173
 ```
-Production: `npm run build && npm start` serves everything on `:8787`. To deploy on Render, use the included `render.yaml` blueprint.
+Production: `npm run build && npm start` serves everything on `:8787`. To deploy on Render, either create a Blueprint from the included `render.yaml`, or create a Web Service by hand: runtime Node, build command `npm ci --include=dev && npm run build`, start command `npm start`, and environment variables `NODE_VERSION=24`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `ANTHROPIC_API_KEY`. On the free plan the service sleeps when idle and its data resets on each deploy; use **Demo controls → Load sample history** to repopulate it.
 
 End-to-end check against the real sandbox, with the API running:
 ```bash
@@ -120,6 +120,15 @@ web/ (React + Vite + AG Grid)  ──►  server/index.ts (Hono)
 ## AI tools used
 - **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`, Anthropic API) is the model behind the Kept agent at runtime, chosen to keep a public demo cheap and fast; set `KEPT_MODEL` to run a larger Claude model instead. It suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
 - **Claude Code** helped build this project.
+
+## Sponsor tools used
+- **AG Grid** (`ag-grid-community` + `ag-grid-react`, Quartz theme) powers the merchant ledger in `web/src/pages/Ledger.tsx`:
+  - **Live updates without losing state.** Rows are keyed with `getRowId`, so each watcher tick updates rows in place, and `enableCellChangeFlash` flashes a cell the moment an order flips to *Refunded*.
+  - **Custom cell renderers** for the order, the promise badge, the status pill, the latest evidence, the payout and the PayPal refund id.
+  - **Status buckets** (Watching, Kept, Held, Refunded, Needs a human and more) built on the grid's external filter, plus a quick-filter search box and text and number column filters.
+  - **A pinned bottom totals row** with the order count, order value and money paid out for the current view.
+  - **CSV export** of the ledger, row styling by status, and click-through from a row to its order.
+- **Render** hosts the live demo at https://kept-jhjl.onrender.com as a single Node web service: Hono serves the API and the built React app, and the watcher loop runs in the same process. `render.yaml` describes the service as a Blueprint.
 
 ## Built during the submission period
 Everything in this repo was written from scratch between Nov 5 and Nov 12, 2026.
