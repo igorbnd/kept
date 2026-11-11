@@ -118,11 +118,11 @@ web/ (React + Vite + AG Grid)  ──►  server/index.ts (Hono)
 ```
 
 ## AI tools used
-- **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`, Anthropic API) is the model behind the Kept agent at runtime, chosen to keep a public demo cheap; set `KEPT_MODEL` to run a larger Claude model instead. It suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
+- **Claude Haiku 4.5** (`claude-haiku-4-5-20251001`, Anthropic API) is the model behind the Kept agent at runtime, chosen to keep a public demo cheap and fast; set `KEPT_MODEL` to run a larger Claude model instead. It suggests promises for the moment, compiles promises into rules, reviews breached delivery evidence (it can only pause a payout), and writes buyer refund notes. All model calls live in `server/ai/`, so another LLM could be used by reimplementing those four functions.
 - **Claude Code** helped build this project.
 
 ## Built during the submission period
-Everything in this repo was written from scratch between Nov 9 and Nov 12, 2026.
+Everything in this repo was written from scratch between Nov 5 and Nov 12, 2026.
 
 ## License
 [MIT](LICENSE)
