@@ -8,3 +8,9 @@ data
 video/out/
 video/raw/
 video/node_modules/
+
+# internal: submission notes, brief, demo video tooling and voiceover scripts
+docs/BRIEF.md
+docs/SUBMISSION.md
+video/
+.DS_Store
