@@ -12,5 +12,7 @@ video/node_modules/
 # internal: submission notes, brief, demo video tooling and voiceover scripts
 docs/BRIEF.md
 docs/SUBMISSION.md
+docs/DEVPOST-ABOUT.md
 video/
 .DS_Store
+.~lock.*#
