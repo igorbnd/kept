@@ -5,6 +5,8 @@ The **Kept agent**, an LLM agent powered by Claude, turns it into a rule that ca
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/), 2026.
 
+**▶ [Watch the 3-minute demo video](https://youtu.be/fyTHkRSuUQs)** · **[Try the live demo](https://kept-jhjl.onrender.com)**
+
 ![Refund: promise broken, refunded automatically](docs/screenshots/order.png)
 
 ## The problem
